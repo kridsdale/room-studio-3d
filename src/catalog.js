@@ -5,8 +5,8 @@ export const IN_TO_M = 0.0254;
 export const M_TO_IN = 1 / 0.0254;
 
 export const DEFAULT_ROOM = {
-  widthIn: 111,             // 9' 3" (North wall East-West width, recalibrated from exact 23" South switch-wall anchor)
-  lengthIn: 174,            // 14' 6" (North-South length, recalibrated proportionally from 23" anchor)
+  widthIn: 111,             // 9' 3" EXACT (26" + 59" centered North window + 26" = 111", confirmed by 23" South wall anchor)
+  lengthIn: 174,            // 14' 6" (North-South length, recalibrated proportionally from 23" South & 111" North anchors)
   heightIn: 96,             // 8' 0" ceiling (anchored to standard 80" doors)
   swFlareWidthIn: 11,       // 11" outward West flare at SW entry door corner (South wall = 122" = 10' 2")
   swFlareLengthIn: 44,      // 44" (~3' 8") angled wall section between entry door & bookcase (~14.0 deg)
@@ -16,7 +16,7 @@ export const DEFAULT_ROOM = {
   entryDoorWidthIn: 32,     // 32" frosted-glass entry door (-29.75" to -61.75")
   entryDoorCasingWidthIn: 2.75, // Outer door frame (-27.0") -> exact 23.00" from closet right edge (-4.0")!
   entryDoorOffsetFromWestIn: 4.75, // Flared SW corner (-66.5") to door hinge jamb (-61.75")
-  northWindow: { widthIn: 56, heightIn: 48, sillIn: 30, offsetFromWestIn: 20 },
+  northWindow: { widthIn: 59, heightIn: 48, sillIn: 30, offsetFromWestIn: 26 }, // Centered: 26" W + 59" win + 26" E = 111"
   eastWindow: { widthIn: 24, heightIn: 44, sillIn: 34, offsetFromSouthIn: 17 },
 };
 
