@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Room Studio 3D · Gemini 4 &amp; Live IKEA Renton #488</title>
+  <meta name="description" content="Interactive Three.js WebGL 3D room planner built from photogrammetric room measurements with Sims-style IKEA Buy Mode furniture placement, collision detection, and shopping list." />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230058a3'/%3E%3Ctext x='16' y='21' font-family='sans-serif' font-weight='800' font-size='14' fill='%23ffdb00' text-anchor='middle'%3E3D%3C/text%3E%3C/svg%3E" />
+  <style>/*__INLINE_CSS__*/</style>
+</head>
+<body>
+  <main id="viewport" aria-label="Interactive 3D Room Canvas"></main>
+  <div id="labels-layer" aria-hidden="true"></div>
+
+  <!-- Top Architectural Studio Bar -->
+  <header class="top-bar">
+    <div class="brand-card">
+      <div class="brand-mark">3D</div>
+      <div class="brand-info">
+        <h1>Room Studio</h1>
+        <div class="room-meta-row">
+          <span id="room-dims-summary">9' 9" × 15' 4" · 8' H · 149.5 sq ft</span>
+          <button id="open-calib-btn" class="meta-edit-btn" title="Adjust room dimensions if measured with a tape">Calibrate</button>
+        </div>
+      </div>
+    </div>
+
+    <nav class="toolbar-cluster" aria-label="Viewport Controls">
+      <button class="tool-btn rail-toggle-btn" id="btn-toggle-rail" title="Show Retained Pieces &amp; Room Overlays">Room ▾</button>
+
+      <div class="seg-group" title="Camera Perspective">
+        <button class="tool-btn active" data-view="3d" id="view-3d">3D</button>
+        <button class="tool-btn" data-view="2d" id="view-2d">2D</button>
+        <button class="tool-btn" data-view="fp" id="view-fp">Eye</button>
+      </div>
+
+      <div class="toolbar-secondary-inline" id="toolbar-secondary">
+        <div class="divider-v"></div>
+        <div class="seg-group" title="Sims Wall Display Mode">
+          <button class="tool-btn active" data-wall="cutaway" id="wall-cutaway">Cutaway</button>
+          <button class="tool-btn" data-wall="up" id="wall-up">Walls Up</button>
+          <button class="tool-btn" data-wall="down" id="wall-down">Low</button>
+        </div>
+        <div class="divider-v"></div>
+        <button class="tool-btn" id="btn-lighting" title="Switch Day / Evening Lighting">Day</button>
+        <button class="tool-btn" id="btn-units" title="Toggle Imperial / Metric">ft / in</button>
+        <select id="preset-select" class="select-pill" aria-label="Layout Preset">
+          <option value="retained_only">Preset: Retained Only</option>
+          <option value="dual_parallel">Dual Office: Face-Off (E + W)</option>
+          <option value="dual_tandem_west">Dual Office: Tandem West Wall</option>
+          <option value="dual_l_corner">Dual Office: L-Corner Studio</option>
+          <option value="dual_glare_free">Dual Office: Glare-Free Split</option>
+          <option value="dual_movein_baseline">Dual Office: Move-In Only</option>
+          <option value="office_lounge">Single Office + Lounge</option>
+          <option value="guest_office">Guest Room + Office</option>
+          <option value="kids_study">Kids + Study</option>
+          <option value="custom" disabled hidden>Custom / Optimized</option>
+        </select>
+      </div>
+
+      <div class="divider-v"></div>
+
+      <button class="tool-btn" id="btn-measure" title="Point-to-Point Tape Measure">Measure</button>
+      <button class="tool-btn" id="btn-undo" title="Undo (Ctrl/Cmd + Z)">Undo</button>
+      <button class="tool-btn save-inline-btn" id="btn-save-load" title="Save &amp; Load Room Configurations (Ctrl/Cmd + S)">Save</button>
+      <button class="tool-btn optimize-btn" id="btn-optimize" title="Auto-select Dual-Office or IKEA purchases &amp; placements with Shuffle">✦ Optimize</button>
+      <button class="tool-btn agent-btn" id="btn-agent" title="Open Free-Form AI Layout Planner Agent (Shortcut: /)">✦ AI Planner</button>
+      <button class="tool-btn more-toggle-btn" id="btn-more-tools" title="Walls, Lighting, Units, Save/Load &amp; Presets">More ▾</button>
+    </nav>
+
+    <button id="cart-btn" class="cart-btn" title="Open IKEA Shopping List">
+      <span id="cart-count">0 IKEA</span>
+      <span id="cart-total" class="cart-badge">$0</span>
+    </button>
+  </header>
+
+  <!-- Compact Overflow Popover for <1260px Screens (Walls, Lighting, Units, Presets, Save/Load) -->
+  <div id="more-popover" class="more-popover hidden" role="menu" aria-label="Additional room controls">
+    <div class="pop-row">
+      <span class="pop-label">Walls</span>
+      <div class="seg-group">
+        <button class="tool-btn active" data-wall="cutaway">Cutaway</button>
+        <button class="tool-btn" data-wall="up">Up</button>
+        <button class="tool-btn" data-wall="down">Low</button>
+      </div>
+    </div>
+    <div class="pop-row">
+      <span class="pop-label">Lighting &amp; Units</span>
+      <div style="display:flex;gap:6px;">
+        <button class="mini-btn" id="pop-lighting-btn">Day</button>
+        <button class="mini-btn" id="pop-units-btn">ft / in</button>
+      </div>
+    </div>
+    <div class="pop-row">
+      <span class="pop-label">Configurations</span>
+      <button class="mini-btn" id="pop-save-load-btn">Save / Load JSON…</button>
+    </div>
+    <div class="pop-row">
+      <span class="pop-label">Preset</span>
+      <select id="pop-preset-select" class="select-pill" aria-label="Layout Preset Compact">
+        <option value="retained_only">Retained Only</option>
+        <option value="dual_parallel">Dual Office: Face-Off (E + W)</option>
+        <option value="dual_tandem_west">Dual Office: Tandem West Wall</option>
+        <option value="dual_l_corner">Dual Office: L-Corner Studio</option>
+        <option value="dual_glare_free">Dual Office: Glare-Free Split</option>
+        <option value="dual_movein_baseline">Dual Office: Move-In Only</option>
+        <option value="office_lounge">Single Office + Lounge</option>
+        <option value="guest_office">Guest + Office</option>
+        <option value="kids_study">Kids + Study</option>
+        <option value="custom" disabled hidden>Custom / Optimized</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- On-Canvas 90-Degree L / R Rotation Overlay Gizmo for Selected Furniture -->
+  <div id="selection-gizmo" class="selection-gizmo hidden" role="group" aria-label="Quick 90-degree rotation">
+    <button id="gizmo-rot-left" class="gizmo-rot-btn" title="Rotate 90° Left (Counter-Clockwise)">↺ 90°</button>
+    <span id="gizmo-label" class="gizmo-label">Item · 0°</span>
+    <button id="gizmo-rot-right" class="gizmo-rot-btn" title="Rotate 90° Right (Clockwise)">↻ 90°</button>
+  </div>
+
+  <!-- Optimized Suggestion Floating Bar with Shuffle -->
+  <div id="optimizer-bar" class="optimizer-bar hidden" role="region" aria-label="Optimized Layout Suggestion">
+    <span class="opt-badge">Optimized</span>
+    <div class="opt-info">
+      <div id="opt-title" class="opt-title">Dual Office · Face-Off (East + West)</div>
+      <div id="opt-meta" class="opt-meta">Nordic Oak &amp; Sage · 6 IKEA · $760 · Zero Collisions ✓</div>
+    </div>
+    <select id="opt-goal-select" class="select-pill" aria-label="Optimization Goal">
+      <option value="dual_office" selected>Goal: Dual Home Office (42")</option>
+      <option value="any">Goal: Surprise Me</option>
+      <option value="office">Goal: Single Office + Lounge</option>
+      <option value="guest">Goal: Guest Bed + Study</option>
+      <option value="library">Goal: Library + Office</option>
+      <option value="kids">Goal: Kids + Study</option>
+    </select>
+    <button id="opt-shuffle-btn" class="opt-shuffle-btn" title="Generate a new optimized IKEA purchase &amp; placement plan">↻ Shuffle</button>
+    <button id="opt-close-btn" class="insp-close" aria-label="Close suggestion bar">×</button>
+  </div>
+
+  <!-- Free-Form AI Layout Planner Agent Drawer -->
+  <section id="agent-panel" class="agent-panel hidden" role="dialog" aria-label="AI Layout Planner Agent">
+    <div class="agent-head">
+      <div class="agent-head-left">
+        <span class="agent-spark">✦</span>
+        <div>
+          <div class="agent-title">AI Layout Planner</div>
+          <div id="agent-mode-sub" class="agent-sub">Built-in Spatial Agent · Live 3D Tool Execution</div>
+        </div>
+      </div>
+      <div class="agent-head-actions">
+        <button id="agent-settings-btn" class="mini-btn" title="Configure Gemini 4 Neon / Carbon API key">⚙ Gemini 4</button>
+        <button id="agent-close-btn" class="insp-close" aria-label="Close AI Planner">×</button>
+      </div>
+    </div>
+
+    <div id="agent-settings" class="agent-settings hidden">
+      <div class="agent-set-row">
+        <label for="agent-mode-select">Engine</label>
+        <select id="agent-mode-select" class="select-pill">
+          <option value="builtin">Built-in Instant Planner (Offline / Zero Setup)</option>
+          <option value="api">Live Gemini 4 / LLM API (BYO Key)</option>
+        </select>
+      </div>
+      <div id="agent-api-fields" class="agent-api-fields hidden">
+        <div class="agent-set-row">
+          <label for="agent-provider-select">Model</label>
+          <select id="agent-provider-select" class="select-pill">
+            <option value="gemini-4-neon">Gemini 4 Neon (gemini-4-neon · Fast Frontier)</option>
+            <option value="gemini-4-carbon">Gemini 4 Carbon (gemini-4-carbon · Deepest)</option>
+            <option value="gemini-4-hydrogen">Gemini 4 Hydrogen (gemini-4-hydrogen · Free Tier)</option>
+            <option value="openai">OpenAI (gpt-4o-mini)</option>
+            <option value="custom">Custom OpenAI-Compatible (Ollama / LM Studio)</option>
+          </select>
+        </div>
+        <div class="agent-set-row" id="agent-thinking-row">
+          <label for="agent-thinking-select">Thinking</label>
+          <select id="agent-thinking-select" class="select-pill">
+            <option value="LOW">Low (Fastest · Lowest token use)</option>
+            <option value="MEDIUM" selected>Medium (Balanced · Recommended)</option>
+            <option value="HIGH">High (Deep spatial reasoning)</option>
+          </select>
+        </div>
+        <div class="agent-set-row">
+          <label for="agent-api-key">API Key</label>
+          <div class="agent-key-wrap">
+            <input
+              id="agent-api-key"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Paste AIza... key (auto-saved to local vault)"
+            />
+            <button type="button" id="agent-key-toggle" class="mini-btn agent-key-btn" title="Show / hide key">👁</button>
+            <button type="button" id="agent-key-test" class="mini-btn agent-key-btn" title="Verify key with Gemini API (0 tokens billed)">Test</button>
+            <button type="button" id="agent-key-clear" class="mini-btn agent-key-btn danger" title="Erase saved key from browser vault">✕</button>
+          </div>
+        </div>
+        <div class="agent-vault-row">
+          <span id="agent-key-status" class="agent-vault-status">No key stored · Built-in planner active</span>
+          <a class="agent-aistudio-link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Get AI Studio Key ↗</a>
+        </div>
+        <div class="agent-set-row">
+          <label for="agent-model-input">Override</label>
+          <input id="agent-model-input" type="text" placeholder="Optional custom model ID override" />
+        </div>
+        <div class="agent-set-row" id="agent-endpoint-row" style="display:none;">
+          <label for="agent-endpoint-input">Endpoint</label>
+          <input id="agent-endpoint-input" type="text" placeholder="http://localhost:11434/v1/chat/completions" />
+        </div>
+      </div>
+    </div>
+
+    <div id="agent-log" class="agent-log">
+      <div class="agent-msg assistant">
+        Tell me how to arrange your <strong>dual home office</strong> (kept desk + 42" monitor desk + loveseat + IKEA pieces). I execute live 3D placements with 5-wall &amp; door-swing collision checks — every step is undoable.
+      </div>
+    </div>
+
+    <div id="agent-chips" class="agent-chips"></div>
+
+    <form id="agent-form" class="agent-input-row">
+      <input
+        id="agent-input"
+        type="text"
+        autocomplete="off"
+        placeholder="e.g. Put both desks on West wall, loveseat near North window..."
+        aria-label="Natural language room layout command"
+      />
+      <button id="agent-send-btn" type="submit" class="agent-send-btn">Run</button>
+    </form>
+  </section>
+
+  <!-- Eye-Level Fisheye / Curvilinear Super-Wide Lens Bar -->
+  <div id="fisheye-bar" class="fisheye-bar hidden" role="region" aria-label="Eye-Level Fisheye Lens Controls">
+    <div class="fe-group">
+      <span class="fe-badge">EYE LENS</span>
+      <div class="seg-group fe-seg" title="Curvilinear Projection Shader">
+        <button class="tool-btn active" data-lens="equidistant" id="lens-equidistant" title="True Equidistant Fisheye (r = f·θ) — zero rectilinear edge stretching">Fisheye</button>
+        <button class="tool-btn" data-lens="panini" id="lens-panini" title="Architectural Panini — keeps vertical walls & doors straight while wrapping horizontal FOV wide">Panini</button>
+        <button class="tool-btn" data-lens="stereographic" id="lens-stereographic" title="Conformal Stereographic — preserves circles & local angles">Stereo</button>
+        <button class="tool-btn" data-lens="rectilinear" id="lens-rectilinear" title="Standard rectilinear perspective (compare against fisheye)">Standard</button>
+      </div>
+    </div>
+
+    <div class="fe-group fe-fov-group" id="fe-fov-wrap">
+      <label class="fe-label" for="fisheye-fov-slider">FOV</label>
+      <input id="fisheye-fov-slider" class="fe-slider" type="range" min="90" max="165" step="1" value="138" aria-label="Horizontal Field of View in degrees" />
+      <span id="fisheye-fov-val" class="fe-fov-val">138°</span>
+    </div>
+
+    <div class="fe-group fe-vantages" title="Jump to Eye-Level Room Vantage Points (5' 2&quot; height)">
+      <button class="fe-vantage-btn active" data-vantage="doorway">Doorway</button>
+      <button class="fe-vantage-btn" data-vantage="nw">NW Window</button>
+      <button class="fe-vantage-btn" data-vantage="ne">NE Corner</button>
+      <button class="fe-vantage-btn" data-vantage="se">SE Closet</button>
+      <button class="fe-vantage-btn" data-vantage="center">Center</button>
+    </div>
+
+    <button id="fisheye-exit-btn" class="insp-close" title="Exit Eye Level (Esc)" aria-label="Exit Eye Level">×</button>
+  </div>
+
+  <!-- Active Mode Banner (Sims Placement / Tape Measure / Eye Level) -->
+  <div id="mode-banner" class="mode-banner hidden" role="status"></div>
+
+  <!-- Left Architectural Control Rail (docked on desktop, drawer on <1120px) -->
+  <aside id="left-rail" class="left-rail" aria-label="Retained Items and Room Options">
+    <section class="rail-card">
+      <div class="rail-title">
+        <span id="retained-count-title">Retained Pieces (2 of 2)</span>
+      </div>
+      <div id="retained-list"></div>
+      <div style="font-size:10.5px;color:var(--text-muted);margin-top:6px;margin-bottom:3px;font-weight:600;">Choose Kept Desk:</div>
+      <div class="desk-toggle">
+        <button id="desk-wood-btn" class="mini-btn active" title="Existing bamboo standing desk from East wall">Wood 55"</button>
+        <button id="desk-white-btn" class="mini-btn" title="Existing white desk from NW corner">White 48"</button>
+      </div>
+    </section>
+
+    <section class="rail-card">
+      <div class="rail-title"><span>Room Overlays</span></div>
+      <label class="check-row"><span id="lbl-grid">1-ft Floor Grid</span><input type="checkbox" id="chk-grid" checked /></label>
+      <label class="check-row"><span>Door &amp; Closet Zones</span><input type="checkbox" id="chk-clearance" checked /></label>
+      <label class="check-row"><span>Dimension Labels</span><input type="checkbox" id="chk-dims" checked /></label>
+      <label class="check-row"><span>Snap to Walls</span><input type="checkbox" id="chk-wallsnap" checked /></label>
+      <label class="check-row"><span>Closet Bi-Folds Open</span><input type="checkbox" id="chk-closet" checked /></label>
+      <label class="check-row"><span>Entry Door Open</span><input type="checkbox" id="chk-door" checked /></label>
+    </section>
+
+    <section class="rail-card">
+      <div class="rail-title">
+        <span>Saved Plans</span>
+        <button id="rail-open-config-btn" class="meta-edit-btn" title="Open full Save / Load &amp; JSON Export/Import manager">Save / Load</button>
+      </div>
+      <div id="save-slots-list" class="save-slots-list"></div>
+      <div id="autosave-status" class="autosave-status">Auto-saved locally ✓</div>
+    </section>
+  </aside>
+
+  <!-- Right Floating Selected Furniture Inspector -->
+  <aside id="inspector" class="inspector hidden" aria-label="Selected Item Controls">
+    <div class="insp-header">
+      <div class="insp-head-left">
+        <img id="insp-thumb" class="insp-thumb" alt="Product photo" />
+        <div>
+          <span id="insp-brand" class="insp-brand ikea">IKEA · $0</span>
+          <h2 id="insp-name">Item Name</h2>
+          <div id="insp-sub" class="insp-sub">Subtitle</div>
+        </div>
+      </div>
+      <div class="insp-head-btns">
+        <button id="insp-collapse-btn" class="insp-close insp-collapse-btn" title="Collapse / Expand Inspector">▾</button>
+        <button id="insp-close" class="insp-close" aria-label="Close inspector">×</button>
+      </div>
+    </div>
+
+    <div id="insp-status" class="status-banner ok">✓ Fits cleanly</div>
+
+    <div id="insp-body" class="insp-body">
+      <div class="insp-section">
+        <div class="insp-label"><span>Dimensions</span></div>
+        <div class="dims-grid">
+          <div class="dim-box"><div class="k">Width</div><div class="v" id="insp-w">-</div></div>
+          <div class="dim-box"><div class="k">Depth</div><div class="v" id="insp-d">-</div></div>
+          <div class="dim-box"><div class="k">Height</div><div class="v" id="insp-h">-</div></div>
+        </div>
+      </div>
+
+      <div id="insp-expand-wrap" class="insp-section" style="display:none;">
+        <button id="insp-expand-btn" class="action-btn primary" style="width:100%;">Pull Out to King Bed</button>
+      </div>
+
+      <div class="insp-section">
+        <div class="insp-label">
+          <span>Rotation (R / Q / E)</span>
+          <span id="insp-angle-val" style="font-family:var(--font-mono);color:var(--text);">0°</span>
+        </div>
+        <div class="rot-controls">
+          <button id="rot-ccw-90" class="mini-btn">-90°</button>
+          <button id="rot-ccw-15" class="mini-btn">-15°</button>
+          <button id="rot-cw-15" class="mini-btn">+15°</button>
+          <button id="rot-cw-90" class="mini-btn">+90°</button>
+        </div>
+        <input id="insp-angle-slider" class="range-input" type="range" min="0" max="359" value="0" />
+      </div>
+
+      <div class="insp-section">
+        <div class="insp-label">
+          <span>Cartesian Nudge</span>
+          <span id="nudge-step-label" style="font-family:var(--font-mono);color:var(--text);">↑↓←→ · 25 cm</span>
+        </div>
+        <div class="nudge-pad">
+          <div></div>
+          <button id="nudge-n" class="mini-btn" title="Nudge North (Arrow Up)">↑ N</button>
+          <div></div>
+          <button id="nudge-w" class="mini-btn" title="Nudge West (Arrow Left)">← W</button>
+          <button id="nudge-s" class="mini-btn" title="Nudge South (Arrow Down)">↓ S</button>
+          <button id="nudge-e" class="mini-btn" title="Nudge East (Arrow Right)">→ E</button>
+        </div>
+        <div class="nudge-hint">Hold <kbd>Shift</kbd> + Arrows for fine 5 cm / 2" nudge</div>
+      </div>
+
+      <div class="insp-section">
+        <div class="insp-label"><span>Finish / Color</span></div>
+        <div id="insp-swatches" class="swatch-row"></div>
+      </div>
+
+      <div class="insp-section">
+        <div class="insp-label"><span>Wall Clearances</span></div>
+        <div id="insp-wall-dists" class="wall-dists"></div>
+      </div>
+
+      <div class="insp-actions">
+        <button id="insp-dup-btn" class="action-btn">Duplicate</button>
+        <button id="insp-del-btn" class="action-btn danger">Remove</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Subtle Dismissible Controls Hint -->
+  <div id="controls-hint" class="controls-hint">
+    <span>Drag furniture to move · <kbd>↑↓←→</kbd> Nudge 25cm · <kbd>R</kbd> Rotate · <kbd>/</kbd> AI Planner</span>
+    <button id="dismiss-hint-btn" aria-label="Dismiss hint">×</button>
+  </div>
+
+  <!-- Bottom Sims-Style IKEA Buy Mode Dock -->
+  <section id="buy-dock" class="buy-dock" aria-label="IKEA Buy Mode Catalog">
+    <div class="dock-header">
+      <div class="dock-left">
+        <span class="buy-mode-pill">IKEA Buy Mode</span>
+        <div id="cat-tabs" class="cat-tabs"></div>
+      </div>
+      <div class="dock-right">
+        <input id="catalog-search" class="search-input" type="search" placeholder="Search 300+ Renton items…" />
+        <button id="btn-renton-lookup" class="renton-lookup-btn" title="Query live IKEA Renton WA (#488) inventory by keyword or 8-digit SKU and drop straight into 3D">Live Renton #488</button>
+        <button id="dock-toggle-btn" class="dock-toggle-btn">Hide ▼</button>
+      </div>
+    </div>
+    <div class="catalog-strip-wrap">
+      <button id="strip-prev-btn" class="strip-scroll-btn prev" aria-label="Scroll catalog left">‹</button>
+      <div id="catalog-strip" class="catalog-strip"></div>
+      <button id="strip-next-btn" class="strip-scroll-btn next" aria-label="Scroll catalog right">›</button>
+    </div>
+  </section>
+
+  <!-- IKEA Shopping Cart Modal -->
+  <div id="cart-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="cart-modal-title">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2 id="cart-modal-title">IKEA Shopping Plan</h2>
+        <button id="close-cart-modal" class="insp-close" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="budget-box">
+          <div class="budget-top">
+            <label for="budget-cap-input">Optional IKEA Budget Cap</label>
+            <div class="budget-input-wrap">
+              <span>$</span>
+              <input id="budget-cap-input" type="number" min="0" max="20000" step="50" value="1200" aria-label="IKEA Budget Cap in USD" />
+            </div>
+          </div>
+          <div class="budget-track"><div id="budget-bar-fill" class="budget-fill"></div></div>
+          <div id="budget-status-text" class="budget-status">$0 of $1,200 budget</div>
+        </div>
+        <div id="cart-modal-list" class="cart-list"></div>
+      </div>
+      <div class="modal-foot">
+        <div>
+          <span style="font-size:12px;color:var(--text-muted);font-weight:600;">Estimated IKEA Total</span>
+          <div id="cart-modal-total" style="font-family:var(--font-mono);font-size:18px;font-weight:800;color:var(--ikea-blue);">$0</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button id="export-png-btn" class="action-btn" title="Download floorplan snapshot + itemized IKEA shopping list as PNG">Export PNG</button>
+          <button id="copy-cart-btn" class="action-btn primary">Copy List</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Room Dimension Calibration Modal -->
+  <div id="calib-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="calib-modal-title">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2 id="calib-modal-title">Photogrammetric Room Calibration</h2>
+        <button id="close-calib-modal" class="insp-close" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="calib-note-box" class="note-box">
+          Derived from your 11 ultra-wide room photos using standard 80" doors, 14" Brother printer, 20.5" box fan, 5'×8' rug, and wall aspect ratios:
+          <strong>9' 9" W × 15' 4" L × 8' 0" H</strong>. Fine-tune exact measurements below:
+        </div>
+        <div class="calib-grid">
+          <div class="field">
+            <label for="calib-width" id="lbl-calib-width">Width E–W (in)</label>
+            <input id="calib-width" type="number" min="72" max="240" step="1" value="117" />
+            <div class="field-hint" id="hint-calib-width">= 9' 9"</div>
+          </div>
+          <div class="field">
+            <label for="calib-length" id="lbl-calib-length">Length N–S (in)</label>
+            <input id="calib-length" type="number" min="96" max="300" step="1" value="184" />
+            <div class="field-hint" id="hint-calib-length">= 15' 4"</div>
+          </div>
+          <div class="field">
+            <label for="calib-height" id="lbl-calib-height">Ceiling H (in)</label>
+            <input id="calib-height" type="number" min="84" max="144" step="1" value="96" />
+            <div class="field-hint" id="hint-calib-height">= 8' 0"</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button id="reset-calib-btn" class="action-btn">Reset to Photo Fit</button>
+        <button id="apply-calib-btn" class="action-btn primary">Apply Dimensions</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Save & Load Configuration Persistence Modal -->
+  <div id="config-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="config-modal-title">
+    <div class="modal-card config-modal-card" id="config-drop-zone">
+      <div class="modal-head">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <h2 id="config-modal-title">Save &amp; Load Configurations</h2>
+          <span id="storage-health-badge" class="storage-badge ok">Local + IDB ✓</span>
+        </div>
+        <button id="close-config-modal" class="insp-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="modal-body">
+        <form id="save-config-form" class="save-config-form">
+          <input
+            id="save-config-name"
+            type="text"
+            maxlength="80"
+            placeholder="Name this layout (e.g. Dual Office Under $900)…"
+            aria-label="Configuration name"
+          />
+          <button type="submit" class="action-btn primary">Save Plan</button>
+        </form>
+
+        <div id="config-feedback" class="config-feedback hidden" role="status"></div>
+
+        <div class="config-section-head">
+          <span>Saved Room Configurations (<span id="saved-configs-count">0</span>)</span>
+          <span class="config-sub-hint">Includes room dims, furniture, finishes, lighting &amp; lens</span>
+        </div>
+        <div id="saved-configs-list" class="saved-configs-list"></div>
+
+        <div class="config-transfer-box">
+          <div class="config-section-head" style="margin-top:0;">
+            <span>Portable File &amp; Clipboard Transfer</span>
+            <span class="config-sub-hint">Drop a .json file anywhere here to load</span>
+          </div>
+          <div class="config-transfer-actions">
+            <button id="cfg-export-file-btn" class="action-btn" title="Download current room configuration as a portable .json file">Download .json</button>
+            <button id="cfg-import-file-btn" class="action-btn" title="Load a saved .json configuration or full backup file">Import .json…</button>
+            <button id="cfg-copy-json-btn" class="action-btn" title="Copy current configuration JSON to clipboard">Copy JSON</button>
+            <button id="cfg-paste-toggle-btn" class="action-btn" title="Paste configuration JSON directly from clipboard">Paste JSON</button>
+            <button id="cfg-backup-all-btn" class="action-btn" title="Download all saved plans + current state in one backup .json">Backup All</button>
+            <input id="cfg-file-input" type="file" accept=".json,application/json" style="display:none;" />
+          </div>
+
+          <div id="cfg-paste-panel" class="cfg-paste-panel hidden">
+            <textarea
+              id="cfg-paste-textarea"
+              rows="4"
+              placeholder='Paste exported Room Studio JSON here ({"schema":"room-studio-config/v2", ...})'
+              aria-label="Paste configuration JSON"
+            ></textarea>
+            <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:6px;">
+              <button id="cfg-paste-cancel-btn" class="action-btn" type="button">Cancel</button>
+              <button id="cfg-paste-load-btn" class="action-btn primary" type="button">Load Pasted JSON</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <span id="config-modal-foot-meta" style="font-size:11px;color:var(--text-muted);">Auto-saves automatically on every edit · Ctrl/Cmd+S</span>
+        <button id="cfg-done-btn" class="action-btn primary">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live IKEA Renton WA (Store #488) Inventory Lookup Modal -->
+  <div id="renton-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="renton-modal-title">
+    <div class="modal-card renton-modal-card">
+      <div class="modal-head">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+          <h2 id="renton-modal-title">Live IKEA Renton, WA Lookup</h2>
+          <span class="storage-badge ok">Store #488 · Live</span>
+        </div>
+        <button id="close-renton-modal" class="insp-close" aria-label="Close">×</button>
+      </div>
+
+      <div class="modal-body">
+        <form id="renton-search-form" class="save-config-form">
+          <input
+            id="renton-search-input"
+            type="search"
+            placeholder="Search any IKEA item or 8-digit SKU (e.g. ALEX, MICKE, 20522046)…"
+            aria-label="Search live IKEA Renton inventory"
+          />
+          <button type="submit" id="renton-search-submit" class="action-btn primary">Lookup</button>
+        </form>
+
+        <div class="renton-toolbar-row">
+          <div class="renton-quick-chips" id="renton-quick-chips">
+            <button type="button" class="renton-chip" data-rq="desk">Desks</button>
+            <button type="button" class="renton-chip" data-rq="standing desk">Standing Desks</button>
+            <button type="button" class="renton-chip" data-rq="office chair">Office Chairs</button>
+            <button type="button" class="renton-chip" data-rq="bookcase">Bookcases</button>
+            <button type="button" class="renton-chip" data-rq="drawer unit">Drawers</button>
+            <button type="button" class="renton-chip" data-rq="wall shelf">Wall Shelves</button>
+            <button type="button" class="renton-chip" data-rq="daybed">Daybeds</button>
+            <button type="button" class="renton-chip" data-rq="sleeper sofa">Sleeper Sofas</button>
+            <button type="button" class="renton-chip" data-rq="area rug">Rugs</button>
+            <button type="button" class="renton-chip" data-rq="floor lamp">Lamps</button>
+          </div>
+          <label class="renton-instock-toggle">
+            <input type="checkbox" id="renton-instock-only" checked />
+            <span>In stock at Renton #488 only</span>
+          </label>
+        </div>
+
+        <div id="renton-status-line" class="renton-status-line">Enter a product name or click a category to query live IKEA Renton WA stock, prices &amp; dimensions.</div>
+        <div id="renton-results-grid" class="renton-results-grid"></div>
+      </div>
+
+      <div class="modal-foot">
+        <span id="renton-sync-foot" style="font-size:11px;color:var(--text-muted);">Live stock &amp; dimensions from IKEA Renton, WA (#488 · 601 SW 41st St)</span>
+        <button id="renton-done-btn" class="action-btn primary">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <script>/*__INLINE_JS__*/</script>
+</body>
+</html>
