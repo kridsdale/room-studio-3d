@@ -112,10 +112,12 @@ function buildWallWithOpenings(widthM, heightM, thicknessM, openings, wallMat, t
 
   const baseH = 4.5 * IN_TO_M;
   const baseD = 0.55 * IN_TO_M;
-  const casingPad = 3.05 * IN_TO_M; // Clear door/closet casings cleanly so baseboards never intersect trim!
   const floorOpenings = openings
     .filter((o) => o.y0 < baseH + 0.01)
-    .map((o) => [o.cx - o.w / 2 - casingPad, o.cx + o.w / 2 + casingPad])
+    .map((o) => {
+      const pad = typeof o.casingPadM === 'number' ? o.casingPadM : 0;
+      return [o.cx - o.w / 2 - pad, o.cx + o.w / 2 + pad];
+    })
     .sort((a, b) => a[0] - b[0]);
 
   let cursor = -widthM / 2 + 0.002;
@@ -510,16 +512,20 @@ export function buildRoom(roomConfig) {
   const entryCenterLocalX = -(entryWorldCenterX - southCenterWorldX);
   const closetCenterLocalX = -(closetCenterX - southCenterWorldX);
 
+  const doorCasingIn = roomConfig.entryDoorCasingWidthIn || 2.75;
+  const doorCasingM = doorCasingIn * IN_TO_M;
   const southOpenings = [
-    { cx: entryCenterLocalX, y0: 0, w: entryW, h: doorH },
-    { cx: closetCenterLocalX, y0: 0, w: closetW, h: doorH },
+    { cx: entryCenterLocalX, y0: 0, w: entryW, h: doorH, hasCasing: true, casingPadM: doorCasingM + 0.002 },
+    // Closet opening has no frame/moulding IRL (clean drywall return), so baseboard runs flush to edge!
+    { cx: closetCenterLocalX, y0: 0, w: closetW, h: doorH, hasCasing: false, casingPadM: 0 },
   ];
   const southFull = buildWallWithOpenings(southFullW, H, wallT, southOpenings, wallMat, trimMat);
   southFull.rotation.y = Math.PI;
   southFull.position.set(southCenterWorldX, 0, L / 2 + wallT / 2);
 
   for (const op of southOpenings) {
-    const cw = 3 * IN_TO_M;
+    if (!op.hasCasing) continue;
+    const cw = doorCasingM;
     const cd = 0.7 * IN_TO_M;
     const topC = new THREE.Mesh(new THREE.BoxGeometry(op.w + cw * 2, cw, cd), trimMat);
     topC.position.set(op.cx, op.h + cw / 2, wallT / 2 + cd / 2 + 0.001);
@@ -530,9 +536,12 @@ export function buildRoom(roomConfig) {
     southFull.add(topC, lC, rC);
   }
 
-  const midWallX = (entryCenterLocalX - entryW / 2 + (closetCenterLocalX + closetW / 2)) / 2;
+  // Light switch sits near the door-frame side of the exact 23" switch wall between closet & door frame
+  const switchWallLeft = closetCenterLocalX + closetW / 2;
+  const switchWallRight = entryCenterLocalX - entryW / 2 - doorCasingM;
+  const midWallX = (switchWallLeft + switchWallRight) / 2;
   const switchPlate = new THREE.Mesh(new THREE.BoxGeometry(2.75 * IN_TO_M, 4.5 * IN_TO_M, 0.008), trimMat);
-  switchPlate.position.set(midWallX + 0.1, 38 * IN_TO_M, wallT / 2 + 0.005);
+  switchPlate.position.set(switchWallRight - 4.5 * IN_TO_M, 42 * IN_TO_M, wallT / 2 + 0.005);
   southFull.add(switchPlate);
 
   // Frosted-Glass Entry Door (pivoted at flared SW West jamb, 12mm floor undercut so zero wood-floor z-fighting!)

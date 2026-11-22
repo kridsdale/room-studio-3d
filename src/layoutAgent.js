@@ -1075,10 +1075,20 @@ function buildLLMSystemPrompt(state) {
     .filter((c) => !c.liveRenton || placedIds.has(c.id))
     .map((c) => `${c.id} (${c.name}, ${c.w}x${c.d}", $${c.price})`);
 
+  const halfW = state.room.widthIn / 2;
+  const halfL = state.room.lengthIn / 2;
+  const flareW = state.room.swFlareWidthIn || 0;
+  const flareL = state.room.swFlareLengthIn || 0;
+  const swX = -(halfW + flareW);
+  const kinkZ = halfL - flareL;
+  const doorEndX = swX + state.room.entryDoorOffsetFromWestIn + state.room.entryDoorWidthIn;
+  const closetRightX = halfW - state.room.closetOffsetFromEastIn;
+  const closetLeftX = closetRightX - state.room.closetWidthIn;
+
   return `You are a 3D Room Layout Planner Agent for a 5-sided room (inches, origin at center):
 Polygon vertices: ${JSON.stringify(poly)}
-Walls: North window wall z=-92, East window wall x=+58.5, Straight West wall x=-58.5 (z in [-92,+46]), Angled SW entry wall (-58.5,+46)->(-70.5,+92), South door+closet wall z=+92.
-Entry door swing zone: x in [-70.5,-33.5], z in [+58,+92]. SE Closet clearance: x in [-1.5,+46.5], z in [+77,+92].
+Walls: North window wall z=${-halfL}, East window wall x=+${halfW}, Straight West wall x=${-halfW} (z in [${-halfL},+${kinkZ}]), Angled SW entry wall (${-halfW},+${kinkZ})->(${swX},+${halfL}), South door+closet wall z=+${halfL}.
+Entry door swing zone: x in [${swX},${doorEndX}], z in [+${halfL - state.room.entryDoorWidthIn - 2},+${halfL}]. SE Closet clearance: x in [${closetLeftX},+${closetRightX}], z in [+${halfL - 15},+${halfL}].
 rotDeg: 0 faces South (+Z), 90 faces East (+X), 180 faces North (-Z), 270 faces West (-X).
 Current items: ${JSON.stringify(placed)}
 Catalog: ${catalogIds.join('; ')}

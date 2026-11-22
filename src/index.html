@@ -19,7 +19,7 @@
       <div class="brand-info">
         <h1>Room Studio</h1>
         <div class="room-meta-row">
-          <span id="room-dims-summary">9' 9" × 15' 4" · 8' H · 149.5 sq ft</span>
+          <span id="room-dims-summary">9' 3" × 14' 6" · 8' H · 135.8 sq ft</span>
           <button id="open-calib-btn" class="meta-edit-btn" title="Adjust room dimensions if measured with a tape">Calibrate</button>
         </div>
       </div>
@@ -446,19 +446,19 @@
       </div>
       <div class="modal-body">
         <div id="calib-note-box" class="note-box">
-          Derived from your 11 ultra-wide room photos using standard 80" doors, 14" Brother printer, 20.5" box fan, 5'×8' rug, and wall aspect ratios:
-          <strong>9' 9" W × 15' 4" L × 8' 0" H</strong>. Fine-tune exact measurements below:
+          Calibrated from your exact <strong>23.0"</strong> frameless closet-to-door-frame measurement + projective South-wall photo rectification (10' 2" South wall, 2.75" door casing, 80" doors):
+          <strong>9' 3" W × 14' 6" L × 8' 0" H</strong>. Fine-tune exact measurements below:
         </div>
         <div class="calib-grid">
           <div class="field">
             <label for="calib-width" id="lbl-calib-width">Width E–W (in)</label>
-            <input id="calib-width" type="number" min="72" max="240" step="1" value="117" />
-            <div class="field-hint" id="hint-calib-width">= 9' 9"</div>
+            <input id="calib-width" type="number" min="72" max="240" step="1" value="111" />
+            <div class="field-hint" id="hint-calib-width">= 9' 3"</div>
           </div>
           <div class="field">
             <label for="calib-length" id="lbl-calib-length">Length N–S (in)</label>
-            <input id="calib-length" type="number" min="96" max="300" step="1" value="184" />
-            <div class="field-hint" id="hint-calib-length">= 15' 4"</div>
+            <input id="calib-length" type="number" min="96" max="300" step="1" value="174" />
+            <div class="field-hint" id="hint-calib-length">= 14' 6"</div>
           </div>
           <div class="field">
             <label for="calib-height" id="lbl-calib-height">Ceiling H (in)</label>
@@ -468,7 +468,7 @@
         </div>
       </div>
       <div class="modal-foot">
-        <button id="reset-calib-btn" class="action-btn">Reset to Photo Fit</button>
+        <button id="reset-calib-btn" class="action-btn">Reset to 23" Calibrated Fit</button>
         <button id="apply-calib-btn" class="action-btn primary">Apply Dimensions</button>
       </div>
     </div>
@@ -498,6 +498,53 @@
         </form>
 
         <div id="config-feedback" class="config-feedback hidden" role="status"></div>
+
+        <!-- Pure-Google OAuth + Hidden Google Drive appDataFolder Cloud Sync (No API Key Uploaded!) -->
+        <div class="gdrive-sync-box" id="gdrive-sync-box">
+          <div class="gdrive-head">
+            <div class="gdrive-title">
+              <span>☁ Google Drive Sync</span>
+              <span style="font-size:10px;font-weight:600;color:var(--text-muted);">(Hidden appDataFolder)</span>
+            </div>
+            <span id="gdrive-status-badge" class="gdrive-badge">Not signed in</span>
+          </div>
+
+          <div id="gdrive-signed-out">
+            <div class="gdrive-row">
+              <input
+                id="gdrive-client-id-input"
+                class="gdrive-client-inp"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Google OAuth Web Client ID (….apps.googleusercontent.com)"
+                aria-label="Google OAuth Web Client ID"
+              />
+              <button type="button" id="gdrive-signin-btn" class="gdrive-signin-btn">
+                <svg width="14" height="14" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                <span>Sign in with Google</span>
+              </button>
+            </div>
+            <div class="gdrive-hint" id="gdrive-setup-hint">
+              Syncs room configs &amp; saved plans privately in your Google Drive <code>appDataFolder</code>. <strong>Gemini API keys are never uploaded</strong> (device-local only). Authorized JS Origin: <code>https://kridsdale.github.io</code>.
+            </div>
+          </div>
+
+          <div id="gdrive-signed-in" class="hidden">
+            <div class="gdrive-row">
+              <div class="gdrive-user-info">
+                <div id="gdrive-avatar" class="gdrive-avatar">G</div>
+                <div style="min-width:0;">
+                  <div id="gdrive-user-email" class="gdrive-user-email">Signed in</div>
+                  <div id="gdrive-sync-meta" class="gdrive-hint">Synced to hidden Drive appDataFolder · API key stays local-only</div>
+                </div>
+              </div>
+              <button type="button" id="gdrive-push-btn" class="mini-btn" title="Upload current room &amp; saved plans to Google Drive">Sync Now</button>
+              <button type="button" id="gdrive-pull-btn" class="mini-btn" title="Download latest room &amp; saved plans from Google Drive">Pull Cloud</button>
+              <button type="button" id="gdrive-signout-btn" class="mini-btn" title="Disconnect Google Drive sync">Sign Out</button>
+            </div>
+          </div>
+        </div>
 
         <div class="config-section-head">
           <span>Saved Room Configurations (<span id="saved-configs-count">0</span>)</span>
