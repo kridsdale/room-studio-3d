@@ -38,13 +38,13 @@ async function build() {
   fs.mkdirSync(path.resolve('dist'), { recursive: true });
   const outPath = path.resolve('dist/index.html');
   fs.writeFileSync(outPath, finalHtml, 'utf8');
-  for (const staticPage of ['privacy.html', 'terms.html']) {
+  for (const staticPage of ['privacy.html', 'terms.html', 'google40f71daa35aab7eb.html']) {
     const srcPage = path.resolve('src', staticPage);
     if (fs.existsSync(srcPage)) {
       fs.copyFileSync(srcPage, path.resolve('dist', staticPage));
     }
   }
-  console.log(`Built standalone app: ${outPath} (${(finalHtml.length / 1024).toFixed(1)} KB) + privacy.html, terms.html`);
+  console.log(`Built standalone app: ${outPath} (${(finalHtml.length / 1024).toFixed(1)} KB) + static pages`);
 }
 
 build().catch((err) => {
