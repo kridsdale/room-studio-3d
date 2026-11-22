@@ -163,31 +163,66 @@ scene.background = new THREE.Color(0xece9e2);
 const camera = new THREE.PerspectiveCamera(44, window.innerWidth / window.innerHeight, 0.08, 60);
 camera.position.set(4.1, 4.3, 4.6);
 
-const renderer = new THREE.WebGLRenderer({
-  antialias: true,
-  powerPreference: 'high-performance',
-  preserveDrawingBuffer: true,
-});
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.06;
-viewport.appendChild(renderer.domElement);
+let renderer;
+let hasWebGL = true;
+try {
+  renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    powerPreference: 'high-performance',
+    preserveDrawingBuffer: true,
+  });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.06;
+  viewport.appendChild(renderer.domElement);
+} catch (_) {
+  hasWebGL = false;
+  const fallbackEl = document.createElement('div');
+  fallbackEl.style.cssText =
+    'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:#ece9e2;color:#0f172a;font-family:system-ui,sans-serif;text-align:center;';
+  fallbackEl.innerHTML =
+    '<div style="max-width:480px;background:#fff;border-radius:14px;padding:24px;box-shadow:0 8px 28px rgba(15,23,42,.1);">' +
+    '<h2 style="margin:0 0 8px;font-size:20px;">Room Studio 3D</h2>' +
+    '<p style="margin:0 0 12px;font-size:14px;color:#475569;line-height:1.5;">Interactive WebGL 3D room layout planner with live IKEA Renton WA (#488) inventory lookup, Gemini 4 AI Layout Planner, and optional Google Drive appDataFolder sync. Enable WebGL in your browser to explore the 3D viewport.</p>' +
+    '<p style="margin:0;font-size:13px;"><a href="./privacy.html" style="color:#0058a3;font-weight:600;margin-right:14px;">Privacy Policy</a><a href="./terms.html" style="color:#0058a3;font-weight:600;">Terms of Service</a></p>' +
+    '</div>';
+  viewport.appendChild(fallbackEl);
+  renderer = {
+    domElement: fallbackEl,
+    setSize() {},
+    setPixelRatio() {},
+    setRenderTarget() {},
+    render() {},
+    shadowMap: {},
+  };
+}
 
 // Eye-Level Curvilinear Fisheye / Panini / Stereographic Lens Shader Rig
-const fisheyeRig = new FisheyeLensRig(renderer, 768);
+const fisheyeRig = hasWebGL
+  ? new FisheyeLensRig(renderer, 768)
+  : {
+      isActive: () => false,
+      invalidate() {},
+      render() {},
+      setMode() {},
+      setFovDeg() {},
+      unprojectClientPoint: () => null,
+      projectWorldPoint: () => null,
+    };
 
 function isFisheyeActive() {
-  return state.viewMode === 'fp' && fisheyeRig.isActive();
+  return hasWebGL && state.viewMode === 'fp' && fisheyeRig.isActive();
 }
 
 function invalidateFisheye() {
-  fisheyeRig.invalidate();
+  if (hasWebGL) fisheyeRig.invalidate();
 }
 
 function renderActiveView(forceCubemap = false) {
+  if (!hasWebGL) return;
   if (isFisheyeActive()) {
     fisheyeRig.render(renderer, scene, camera, window.innerWidth, window.innerHeight, forceCubemap);
   } else {
@@ -3787,4 +3822,4 @@ function animate(now) {
 initUI();
 loadInitialState();
 applyLightingMood();
-animate(performance.now());
+if (hasWebGL) animate(performance.now());
