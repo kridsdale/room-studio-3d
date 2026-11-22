@@ -51,6 +51,16 @@ import {
   slugifyFilename,
 } from './persistence.js';
 
+import {
+  getGoogleClientId,
+  setGoogleClientId,
+  loadGoogleUserHint,
+  signInWithGoogleDrive,
+  signOutGoogleDrive,
+  pullFromGoogleDrive,
+  pushToGoogleDrive,
+} from './googleDriveSync.js';
+
 // ======================== STATE ========================
 const STORAGE_KEY = 'room_planner_v4_state';
 const AGENT_CFG_KEY = 'room_planner_llm_cfg';
@@ -2241,13 +2251,30 @@ function updateAutosaveStatusUI(labelOverride = null) {
   }
 }
 
-function saveToStorage() {
+let scheduleGoogleCloudPush = () => {};
+
+function saveToStorage(skipCloudPush = false) {
   const snapshot = buildConfigSnapshot(state, activeConfigName, getCurrentBudgetCap(), ALL_CATALOG);
   persistAutoSavedConfig(snapshot);
   updateAutosaveStatusUI();
+  if (!skipCloudPush) scheduleGoogleCloudPush();
 }
 
-function applyFullConfiguration(config, saveUndo = true) {
+function migrateLegacyUncalibratedRoom(rawRoom) {
+  if (!rawRoom || typeof rawRoom !== 'object') return { ...DEFAULT_ROOM };
+  // Upgrade old pre-23"-measurement photo estimate (117 x 184, 12" flare, 46" run) automatically
+  if (
+    rawRoom.widthIn === 117 &&
+    rawRoom.lengthIn === 184 &&
+    (rawRoom.swFlareWidthIn === 12 || rawRoom.swFlareWidthIn === undefined) &&
+    (rawRoom.swFlareLengthIn === 46 || rawRoom.swFlareLengthIn === undefined)
+  ) {
+    return { ...DEFAULT_ROOM };
+  }
+  return { ...DEFAULT_ROOM, ...rawRoom };
+}
+
+function applyFullConfiguration(config, saveUndo = true, opts = {}) {
   if (!config) return;
   clearGhost();
   stopMeasureMode();
@@ -2260,7 +2287,7 @@ function applyFullConfiguration(config, saveUndo = true) {
   }
 
   // 1. Room geometry & retained desk choice
-  state.room = { ...DEFAULT_ROOM, ...(config.room || {}) };
+  state.room = migrateLegacyUncalibratedRoom(config.room);
   state.retainedDeskId = config.retainedDeskId || 'retained_wood_desk';
 
   // 2. Settings (units, lighting, wall mode, fisheye lens, overlays, budget cap)
@@ -2317,7 +2344,7 @@ function applyFullConfiguration(config, saveUndo = true) {
   activeConfigName = config.name || 'Loaded Configuration';
   syncPresetSelectors('custom');
   document.getElementById('optimizer-bar')?.classList.add('hidden');
-  saveToStorage();
+  saveToStorage(!!opts.skipCloudPush);
 }
 
 function loadInitialState() {
@@ -3051,9 +3078,10 @@ function initSaveSlotsUI() {
     }
   });
 
-  const persistLibrary = () => {
+  const persistLibrary = (skipCloudPush = false) => {
     persistSavedConfigsList(savedConfigs);
     renderAllSavedPlansUI();
+    if (!skipCloudPush) scheduleGoogleCloudPush();
   };
 
   const escapeHtml = (str) =>
@@ -3339,6 +3367,205 @@ function initSaveSlotsUI() {
     }
   });
 
+  // ======================== PURE-GOOGLE DRIVE APPDATA CLOUD SYNC ========================
+  // Syncs room configs & named plans privately in the signed-in user's Google Drive appDataFolder.
+  // Gemini / LLM API keys are NEVER uploaded (strictly stripped & kept local-only in keyVault.js).
+  const gdriveSession = {
+    accessToken: null,
+    expiresAt: 0,
+    user: null,
+    fileId: null,
+    syncTimer: null,
+    inFlight: false,
+  };
+
+  const gBadge = document.getElementById('gdrive-status-badge');
+  const gOutBox = document.getElementById('gdrive-signed-out');
+  const gInBox = document.getElementById('gdrive-signed-in');
+  const gClientInp = document.getElementById('gdrive-client-id-input');
+  const gSignInBtn = document.getElementById('gdrive-signin-btn');
+  const gPushBtn = document.getElementById('gdrive-push-btn');
+  const gPullBtn = document.getElementById('gdrive-pull-btn');
+  const gSignOutBtn = document.getElementById('gdrive-signout-btn');
+  const gAvatar = document.getElementById('gdrive-avatar');
+  const gEmailEl = document.getElementById('gdrive-user-email');
+  const gMetaEl = document.getElementById('gdrive-sync-meta');
+  const topSaveBtn = document.getElementById('btn-save-load');
+
+  const setGDriveBadge = (text, cls = '') => {
+    if (gBadge) {
+      gBadge.textContent = text;
+      gBadge.className = `gdrive-badge${cls ? ` ${cls}` : ''}`;
+    }
+    if (topSaveBtn) {
+      topSaveBtn.textContent = gdriveSession.accessToken ? 'Save · ☁' : 'Save';
+    }
+  };
+
+  const syncGDriveUI = () => {
+    const signedIn = !!(gdriveSession.accessToken && gdriveSession.user);
+    gOutBox?.classList.toggle('hidden', signedIn);
+    gInBox?.classList.toggle('hidden', !signedIn);
+    if (signedIn) {
+      if (gEmailEl) gEmailEl.textContent = gdriveSession.user.email || gdriveSession.user.name || 'Signed in';
+      if (gAvatar) {
+        if (gdriveSession.user.picture) {
+          gAvatar.innerHTML = `<img src="${escapeHtml(gdriveSession.user.picture)}" alt="" referrerpolicy="no-referrer" />`;
+        } else {
+          gAvatar.textContent = (gdriveSession.user.name || gdriveSession.user.email || 'G')[0].toUpperCase();
+        }
+      }
+    } else {
+      const hint = loadGoogleUserHint();
+      if (gBadge && hint?.email) {
+        setGDriveBadge(`Reconnect (${hint.email.split('@')[0]})`);
+      } else {
+        setGDriveBadge('Not signed in');
+      }
+    }
+  };
+
+  const buildCurrentCloudBundle = () => {
+    const snap = buildConfigSnapshot(state, activeConfigName || 'Current Plan', getCurrentBudgetCap(), ALL_CATALOG);
+    return buildBackupBundle(snap, savedConfigs);
+  };
+
+  const pushStateToCloud = async (silent = false) => {
+    if (!gdriveSession.accessToken || gdriveSession.inFlight) return false;
+    if (Date.now() >= gdriveSession.expiresAt) {
+      setGDriveBadge('Session expired · Re-sign in', 'err');
+      gdriveSession.accessToken = null;
+      syncGDriveUI();
+      return false;
+    }
+    gdriveSession.inFlight = true;
+    setGDriveBadge('☁ Syncing…', 'syncing');
+    try {
+      const bundle = buildCurrentCloudBundle();
+      const res = await pushToGoogleDrive(gdriveSession.accessToken, bundle, gdriveSession.fileId);
+      gdriveSession.fileId = res.fileId;
+      const t = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      setGDriveBadge(`☁ Synced ${t}`, 'ok');
+      if (gMetaEl) gMetaEl.textContent = `Last synced ${t} to hidden Drive appDataFolder · API key stays local-only`;
+      if (!silent) showConfigFeedback('Synced room configs & saved plans to Google Drive ✓');
+      return true;
+    } catch (err) {
+      setGDriveBadge('Sync error', 'err');
+      if (!silent) showConfigFeedback(`Google Drive sync failed: ${err.message || err}`, true);
+      return false;
+    } finally {
+      gdriveSession.inFlight = false;
+    }
+  };
+
+  const pullStateFromCloud = async (applyCurrent = true, silent = false) => {
+    if (!gdriveSession.accessToken) return { exists: false };
+    setGDriveBadge('☁ Checking cloud…', 'syncing');
+    const res = await pullFromGoogleDrive(gdriveSession.accessToken);
+    if (!res.exists || !res.bundle) {
+      return { exists: false };
+    }
+    gdriveSession.fileId = res.fileId;
+    const norm = validateAndNormalizeConfig(res.bundle, ALL_CATALOG, DEFAULT_ROOM);
+    if (!norm.ok) {
+      throw new Error(norm.error || 'Cloud backup format unrecognized.');
+    }
+
+    if (norm.isBackup) {
+      const mergedById = new Map(savedConfigs.map((c) => [c.id, c]));
+      for (const cloudPlan of norm.savedConfigs) {
+        const local = mergedById.get(cloudPlan.id);
+        const localTs = local?.savedAt ? Date.parse(local.savedAt) : 0;
+        const cloudTs = cloudPlan?.savedAt ? Date.parse(cloudPlan.savedAt) : 0;
+        if (!local || cloudTs >= localTs) {
+          mergedById.set(cloudPlan.id, cloudPlan);
+        }
+      }
+      savedConfigs = Array.from(mergedById.values());
+      persistLibrary(true);
+      if (applyCurrent && norm.current) {
+        applyFullConfiguration(norm.current, false, { skipCloudPush: true });
+      }
+    } else if (applyCurrent && norm.config) {
+      applyFullConfiguration(norm.config, false, { skipCloudPush: true });
+    }
+
+    const t = formatSavedTimestamp(res.modifiedTime) || 'just now';
+    setGDriveBadge(`☁ Synced (${t})`, 'ok');
+    if (gMetaEl) gMetaEl.textContent = `Restored from hidden Drive appDataFolder (${t}) · API key stays local-only`;
+    if (!silent) showConfigFeedback(`Pulled ${savedConfigs.length} plan(s) from Google Drive ✓`);
+    return { exists: true };
+  };
+
+  scheduleGoogleCloudPush = () => {
+    if (!gdriveSession.accessToken) return;
+    clearTimeout(gdriveSession.syncTimer);
+    gdriveSession.syncTimer = setTimeout(() => {
+      pushStateToCloud(true);
+    }, 2400);
+  };
+
+  if (gClientInp) {
+    gClientInp.value = getGoogleClientId();
+    gClientInp.addEventListener('input', () => setGoogleClientId(gClientInp.value));
+    gClientInp.addEventListener('blur', () => setGoogleClientId(gClientInp.value));
+  }
+
+  gSignInBtn?.addEventListener('click', async () => {
+    const cid = gClientInp ? setGoogleClientId(gClientInp.value) : getGoogleClientId();
+    if (!cid) {
+      showConfigFeedback('Paste your Google OAuth Web Client ID (….apps.googleusercontent.com) first.', true);
+      gClientInp?.focus();
+      return;
+    }
+    setGDriveBadge('Signing in…', 'syncing');
+    gSignInBtn.disabled = true;
+    try {
+      const auth = await signInWithGoogleDrive({ clientId: cid });
+      gdriveSession.accessToken = auth.accessToken;
+      gdriveSession.expiresAt = auth.expiresAt;
+      gdriveSession.user = auth.user;
+      syncGDriveUI();
+
+      // Pull existing Drive appDataFolder backup if present; otherwise seed cloud with local plans
+      const pulled = await pullStateFromCloud(true, true);
+      if (pulled.exists) {
+        await pushStateToCloud(true);
+        showConfigFeedback(`Signed in as ${auth.user.email} · Merged & synced with Google Drive ✓`);
+      } else {
+        await pushStateToCloud(true);
+        showConfigFeedback(`Signed in as ${auth.user.email} · Saved initial cloud backup to Drive appData ✓`);
+      }
+    } catch (err) {
+      setGDriveBadge('Not signed in', 'err');
+      showConfigFeedback(err?.message || 'Google Sign-In failed.', true);
+    } finally {
+      gSignInBtn.disabled = false;
+    }
+  });
+
+  gPushBtn?.addEventListener('click', () => pushStateToCloud(false));
+  gPullBtn?.addEventListener('click', async () => {
+    try {
+      const res = await pullStateFromCloud(true, false);
+      if (!res.exists) showConfigFeedback('No cloud backup found yet — click Sync Now to create one.');
+    } catch (err) {
+      setGDriveBadge('Pull failed', 'err');
+      showConfigFeedback(`Pull failed: ${err.message || err}`, true);
+    }
+  });
+  gSignOutBtn?.addEventListener('click', () => {
+    clearTimeout(gdriveSession.syncTimer);
+    signOutGoogleDrive(gdriveSession.accessToken);
+    gdriveSession.accessToken = null;
+    gdriveSession.expiresAt = 0;
+    gdriveSession.user = null;
+    gdriveSession.fileId = null;
+    syncGDriveUI();
+    showConfigFeedback('Signed out of Google Drive Sync. Local plans & local API key remain untouched.');
+  });
+
+  syncGDriveUI();
   renderAllSavedPlansUI();
 }
 

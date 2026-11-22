@@ -2765,6 +2765,157 @@ html, body {
   background: #eff6ff;
 }
 
+/* ==================== GOOGLE DRIVE APPDATA CLOUD SYNC ==================== */
+.gdrive-sync-box {
+  margin-top: 10px;
+  padding: 10px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 88, 163, 0.2);
+  background: linear-gradient(180deg, #f8fbff 0%, #f1f6fc 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gdrive-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gdrive-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gdrive-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.gdrive-badge.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.gdrive-badge.syncing {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.gdrive-badge.err {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.gdrive-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.gdrive-client-inp {
+  flex: 1;
+  min-width: 190px;
+  height: 31px;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 7px;
+  padding: 0 9px;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  background: #fff;
+  color: var(--text);
+}
+
+.gdrive-signin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 31px;
+  padding: 0 12px;
+  border-radius: 7px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  background: #fff;
+  color: #0f172a;
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  white-space: nowrap;
+}
+
+.gdrive-signin-btn:hover {
+  background: #f8fafc;
+  border-color: #2563eb;
+}
+
+.gdrive-user-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gdrive-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.gdrive-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.gdrive-user-email {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gdrive-hint {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.gdrive-hint code {
+  background: rgba(15, 23, 42, 0.06);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+.gdrive-sync-box .hidden {
+  display: none !important;
+}
+
 
 
 
