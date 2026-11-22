@@ -5,7 +5,7 @@
 
 // Optional: paste your public Google OAuth 2.0 Web Client ID here to pre-configure for all browsers
 // (Google OAuth Web Client IDs are public identifiers, safe to commit; Authorized JS Origin: https://kridsdale.github.io)
-export const DEFAULT_GOOGLE_CLIENT_ID = '';
+export const DEFAULT_GOOGLE_CLIENT_ID = '313084776444-edd8jtlfl8jgbj2g0kth48mufe91v92a.apps.googleusercontent.com';
 
 const CLIENT_ID_STORAGE_KEY = 'room_studio_google_client_id_v1';
 const USER_HINT_STORAGE_KEY = 'room_studio_google_user_hint_v1';

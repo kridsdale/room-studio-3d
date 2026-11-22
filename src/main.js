@@ -3505,11 +3505,18 @@ function initSaveSlotsUI() {
     }, 2400);
   };
 
+  const gToggleCidBtn = document.getElementById('gdrive-toggle-cid-btn');
   if (gClientInp) {
-    gClientInp.value = getGoogleClientId();
+    const initialCid = getGoogleClientId();
+    gClientInp.value = initialCid;
+    if (!initialCid) gClientInp.classList.remove('hidden');
     gClientInp.addEventListener('input', () => setGoogleClientId(gClientInp.value));
     gClientInp.addEventListener('blur', () => setGoogleClientId(gClientInp.value));
   }
+  gToggleCidBtn?.addEventListener('click', () => {
+    gClientInp?.classList.toggle('hidden');
+    if (gClientInp && !gClientInp.classList.contains('hidden')) gClientInp.focus();
+  });
 
   gSignInBtn?.addEventListener('click', async () => {
     const cid = gClientInp ? setGoogleClientId(gClientInp.value) : getGoogleClientId();
