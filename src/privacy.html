@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy · Room Studio 3D</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230058a3'/%3E%3Ctext x='16' y='21' font-family='sans-serif' font-weight='800' font-size='14' fill='%23ffdb00' text-anchor='middle'%3E3D%3C/text%3E%3C/svg%3E" />
+  <style>
+    :root { --bg: #f6f7f9; --card: #ffffff; --text: #0f172a; --muted: #475569; --accent: #0058a3; --border: #e2e8f0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+    main { max-width: 760px; margin: 40px auto; padding: 32px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 6px 24px rgba(15, 23, 42, 0.05); }
+    .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); font-weight: 800; font-size: 16px; margin-bottom: 18px; }
+    .mark { width: 30px; height: 30px; border-radius: 7px; background: var(--accent); color: #ffdb00; display: grid; place-items: center; font-size: 13px; font-weight: 800; }
+    h1 { margin: 0 0 6px; font-size: 26px; }
+    .updated { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+    h2 { margin: 24px 0 8px; font-size: 17px; color: var(--accent); }
+    p, li { color: #1e293b; font-size: 14.5px; }
+    ul { padding-left: 20px; }
+    code { background: #f1f5f9; padding: 2px 5px; border-radius: 4px; font-size: 13px; }
+    footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); display: flex; gap: 16px; font-size: 13px; }
+    footer a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="brand" href="./">
+      <span class="mark">3D</span>
+      <span>Room Studio 3D</span>
+    </a>
+    <h1>Privacy Policy</h1>
+    <div class="updated">Effective Date: November 22, 2026 · Application URL: https://kridsdale.github.io/room-studio-3d/</div>
+
+    <p>
+      <strong>Room Studio 3D</strong> is a static, client-side Three.js 3D room layout planner hosted on GitHub Pages.
+      It has <strong>no backend server</strong>, runs entirely in your browser, and never collects, sells, or shares your personal data with third parties.
+    </p>
+
+    <h2>1. Google Account &amp; Google Drive Data Accessed</h2>
+    <p>If you choose to click <strong>Sign in with Google</strong> inside the Save &amp; Load panel to enable optional cross-device sync, Room Studio 3D requests only the minimum scopes required:</p>
+    <ul>
+      <li><code>openid</code>, <code>email</code>, and <code>profile</code> — used solely to display your name, email address, and profile avatar inside the app UI so you know which Google account is connected.</li>
+      <li><code>https://www.googleapis.com/auth/drive.appdata</code> — used solely to read and write a single hidden configuration file (<code>room-studio-3d-cloud-v2.json</code>) inside your Google Drive's private <code>appDataFolder</code>. Room Studio 3D <strong>cannot view, read, modify, or delete any of your regular Google Drive files or folders</strong>.</li>
+    </ul>
+
+    <h2>2. What Is Synced vs. Stored Locally Only</h2>
+    <ul>
+      <li><strong>Synced to your private Google Drive <code>appDataFolder</code> (when signed in):</strong> Your room dimensions, placed furniture coordinates, finishes, lighting/camera preferences, named saved room plans, and IKEA catalog metadata for items placed in your room.</li>
+      <li><strong>Stored strictly locally in your browser (NEVER uploaded to Google Drive):</strong> Any optional Bring-Your-Own-Key (BYOK) Gemini / LLM API key you enter into the AI Layout Planner. API keys are encrypted locally with Web Crypto (AES-GCM-256) in your browser's IndexedDB/localStorage and are explicitly stripped prior to any cloud upload or JSON export.</li>
+    </ul>
+
+    <h2>3. No Backend Storage, Tracking, or Third-Party Sharing</h2>
+    <p>
+      All communication between your browser and Google APIs happens directly from your browser using your OAuth access token.
+      Access tokens are kept in memory only for your active session and are never persisted to any external server.
+      Room Studio 3D uses no analytics trackers, advertising cookies, or third-party data brokers.
+    </p>
+
+    <h2>4. Google API Services User Data Policy (Limited Use)</h2>
+    <p>
+      Room Studio 3D's use and transfer to any other app of information received from Google APIs adheres to the
+      <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>,
+      including the Limited Use requirements. Google user data is never used for advertising, profiling, or training AI/ML models.
+    </p>
+
+    <h2>5. Deleting Your Data &amp; Revoking Access</h2>
+    <ul>
+      <li><strong>Sign out in-app:</strong> Open <strong>Save → Sign Out</strong> to revoke the active browser OAuth session immediately.</li>
+      <li><strong>Revoke Google permissions:</strong> Visit <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">myaccount.google.com/permissions</a> and remove Room Studio 3D.</li>
+      <li><strong>Delete cloud data:</strong> In Google Drive, open <strong>Settings → Manage apps → Room Studio 3D → Delete hidden app data</strong>.</li>
+      <li><strong>Delete local data:</strong> Clear site storage for <code>kridsdale.github.io</code> in your browser settings.</li>
+    </ul>
+
+    <h2>6. Contact</h2>
+    <p>For privacy questions or data requests, contact the developer at <a href="mailto:Kevin.Ridsdale@gmail.com">Kevin.Ridsdale@gmail.com</a>.</p>
+
+    <footer>
+      <a href="./">← Back to Room Studio 3D</a>
+      <a href="./terms.html">Terms of Service</a>
+    </footer>
+  </main>
+</body>
+</html>

@@ -38,7 +38,13 @@ async function build() {
   fs.mkdirSync(path.resolve('dist'), { recursive: true });
   const outPath = path.resolve('dist/index.html');
   fs.writeFileSync(outPath, finalHtml, 'utf8');
-  console.log(`Built standalone app: ${outPath} (${(finalHtml.length / 1024).toFixed(1)} KB)`);
+  for (const staticPage of ['privacy.html', 'terms.html']) {
+    const srcPage = path.resolve('src', staticPage);
+    if (fs.existsSync(srcPage)) {
+      fs.copyFileSync(srcPage, path.resolve('dist', staticPage));
+    }
+  }
+  console.log(`Built standalone app: ${outPath} (${(finalHtml.length / 1024).toFixed(1)} KB) + privacy.html, terms.html`);
 }
 
 build().catch((err) => {
