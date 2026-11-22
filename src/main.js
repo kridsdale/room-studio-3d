@@ -208,9 +208,9 @@ const fisheyeRig = hasWebGL
       invalidate() {},
       render() {},
       setMode() {},
-      setFovDeg() {},
-      unprojectClientPoint: () => null,
-      projectWorldPoint: () => null,
+      setHFovDeg() {},
+      unprojectRay: () => false,
+      projectPoint: () => null,
     };
 
 function isFisheyeActive() {
