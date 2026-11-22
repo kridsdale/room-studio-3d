@@ -1,0 +1,22 @@
+{
+  "name": "room-planner",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "node build-standalone.mjs",
+    "sync-renton": "node scripts/sync-renton-inventory.mjs",
+    "start": "node server.mjs"
+  },
+  "keywords": [],
+  "type": "module",
+  "dependencies": {
+    "esbuild": "^0.28.2",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "rollup": "^4.68.8",
+    "terser": "^5.51.4"
+  }
+}
