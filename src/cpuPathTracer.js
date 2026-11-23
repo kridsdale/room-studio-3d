@@ -1,46 +1,64 @@
 // Multi-Core CPU Physically Based Path Tracer for Room Studio 3D Photo Mode
-// Uses inline Blob Web Workers across all available CPU cores to trace the exact same
-// flat BVH + PBR materials + curvilinear Fisheye / Panini / Stereographic / Rectilinear
-// primary rays as the GPU Ray Tracer, streaming rendered tiles live to a preview canvas.
+// Features:
+//   - High-SPP supersampling presets (32 -> 512 spp) across up to 16 parallel Blob Web Workers
+//   - All-lights soft area NEE on primary hits + luminance-weighted importance sampling on bounces
+//   - R2 Golden-Ratio Quasi-Monte Carlo sub-pixel & area-light stratification
+//   - Shared 8-bin SAH flat BVH + exact curvilinear Fisheye / Panini / Stereographic / Rectilinear optics
+//   - Linear-HDR Firefly Despeckle + 3-pass G-Buffer Guided (Normal + Depth + Albedo) À-Trous Denoiser
+//   - ACES Filmic tone mapping + sRGB encoding
 
 export const CPU_PHOTO_PRESETS = {
   preview: {
     id: 'preview',
-    label: 'Quick (800×450 · 8 spp + Denoise)',
-    width: 800,
-    height: 450,
-    spp: 8,
+    label: 'Quick (960×540 · 32 spp)',
+    width: 960,
+    height: 540,
+    spp: 32,
   },
   fast: {
     id: 'fast',
-    label: 'HD Fast (1280×720 · 16 spp + Denoise)',
+    label: 'HD Studio 8× (1280×720 · 128 spp)',
     width: 1280,
     height: 720,
-    spp: 16,
+    spp: 128,
   },
   hd: {
     id: 'hd',
-    label: '1080p Studio (1920×1080 · 32 spp)',
+    label: '1080p Studio (1920×1080 · 192 spp)',
     width: 1920,
     height: 1080,
-    spp: 32,
+    spp: 192,
   },
   ultra: {
     id: 'ultra',
-    label: '1440p Print (2560×1440 · 64 spp)',
+    label: '1440p Master (2560×1440 · 256 spp)',
     width: 2560,
     height: 1440,
-    spp: 64,
+    spp: 256,
+  },
+  max: {
+    id: 'max',
+    label: '1080p Ultra-Clean (1920×1080 · 512 spp)',
+    width: 1920,
+    height: 1080,
+    spp: 512,
   },
 };
 
-// Shared pure-JS tile path tracer kernel (serialized into Blob Web Workers AND usable on main thread fallback)
+// Pure-JS tile path tracer kernel (serialized into Blob Web Workers AND usable on main-thread fallback).
+// Returns:
+//   - previewRgba: Uint8ClampedArray(tileW * tileH * 4) for instant tile-by-tile preview
+//   - hdrRad:      Float32Array(tileW * tileH * 3) linear HDR radiance for final G-buffer denoiser
+//   - gNormDepth:  Float32Array(tileW * tileH * 4) primary normal.xyz + hitT
+//   - gAlbedo:     Float32Array(tileW * tileH * 3) primary surface albedo (with wood grain)
 function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
   const {
     bvhNodes,
     triData,
     matData,
     lights,
+    lightCdf,
+    lightProb,
     isEvening,
     exposure,
     width,
@@ -55,7 +73,12 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
   } = cfg;
 
   const aspect = width / Math.max(1, height);
-  const out = new Uint8ClampedArray(tileW * tileH * 4);
+  const nPix = tileW * tileH;
+  const previewRgba = new Uint8ClampedArray(nPix * 4);
+  const hdrRad = new Float32Array(nPix * 3);
+  const gNormDepth = new Float32Array(nPix * 4);
+  const gAlbedo = new Float32Array(nPix * 3);
+
   const stack = new Int32Array(44);
   const nLights = lights.length;
 
@@ -152,7 +175,6 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
         const leftIdx = bvhNodes[nOff + 3] | 0;
         const rightIdx = leftIdx + 1;
 
-        // Inlined left AABB slab test
         const lOff = leftIdx << 3;
         let t0 = (bvhNodes[lOff] - roX) * invX;
         let t1 = (bvhNodes[lOff + 4] - roX) * invX;
@@ -174,7 +196,6 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
         if (hitT < tFar) tFar = hitT;
         const dL = tFar >= tNear ? tNear : 1e30;
 
-        // Inlined right AABB slab test
         const rOff = rightIdx << 3;
         t0 = (bvhNodes[rOff] - roX) * invX;
         t1 = (bvhNodes[rOff + 4] - roX) * invX;
@@ -222,22 +243,99 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
   }
 
   function aces(x) {
-    const v = Math.max(0, x);
-    return Math.min(1, Math.max(0, (v * (2.51 * v + 0.03)) / (v * (2.43 * v + 0.59) + 0.14)));
+    const v = x > 0 ? x : 0;
+    const r = (v * (2.51 * v + 0.03)) / (v * (2.43 * v + 0.59) + 0.14);
+    return r < 0 ? 0 : r > 1 ? 1 : r;
   }
 
-  const sunX = 0.45 / Math.hypot(0.45, 0.72, -0.52);
-  const sunY = 0.72 / Math.hypot(0.45, 0.72, -0.52);
-  const sunZ = -0.52 / Math.hypot(0.45, 0.72, -0.52);
+  // Evaluate direct area-light NEE for one light index with given importance weight invPdf
+  function evalAreaLightNEE(
+    lIdx, invPdf, hpX, hpY, hpZ, nX, nY, nZ, rdX, rdY, rdZ,
+    albR, albG, albB, rough, metal, uA, uB
+  ) {
+    const L = lights[lIdx];
+    const su = (uA * 2.0 - 1.0) * L.halfU;
+    const sv = (uB * 2.0 - 1.0) * L.halfV;
+    let lpX = L.cx;
+    let lpY = L.cy;
+    let lpZ = L.cz;
+    if (L.axis === 0) {
+      lpX += su;
+      lpY += sv;
+    } else if (L.axis === 1) {
+      lpZ += su;
+      lpY += sv;
+    } else {
+      lpX += su;
+      lpZ += sv;
+    }
 
-  // Stratified grid dimensions for clean anti-aliasing & low-noise Monte Carlo
-  const stratN = Math.max(1, Math.floor(Math.sqrt(spp)));
-  const invStratN = 1.0 / stratN;
+    const toLX = lpX - hpX;
+    const toLY = lpY - hpY;
+    const toLZ = lpZ - hpZ;
+    const distSq = Math.max(0.09, toLX * toLX + toLY * toLY + toLZ * toLZ);
+    const dist = Math.sqrt(distSq);
+    const invD = 1.0 / dist;
+    const ldX = toLX * invD;
+    const ldY = toLY * invD;
+    const ldZ = toLZ * invD;
+    const ndl = nX * ldX + nY * ldY + nZ * ldZ;
+    if (ndl <= 0.001) return null;
+
+    if (
+      traceBVH(
+        hpX + nX * 0.0025,
+        hpY + nY * 0.0025,
+        hpZ + nZ * 0.0025,
+        ldX,
+        ldY,
+        ldZ,
+        dist - 0.03,
+        true
+      )
+    ) {
+      return null;
+    }
+
+    const area = 4.0 * L.halfU * L.halfV;
+    const geom = Math.min(3.2, (ndl * area * invPdf) / (3.14159265 * distSq + 0.28));
+    const diffScale = (1.0 - metal) * geom;
+    let cR = albR * diffScale;
+    let cG = albG * diffScale;
+    let cB = albB * diffScale;
+
+    // Microfacet specular highlight (clamped smoothly to prevent fireflies)
+    const hx = ldX - rdX;
+    const hy = ldY - rdY;
+    const hz = ldZ - rdZ;
+    const hl = Math.hypot(hx, hy, hz);
+    if (hl > 1e-5) {
+      const ndh = Math.max(0, (nX * hx + nY * hy + nZ * hz) / hl);
+      const a2 = Math.max(0.006, rough * rough * rough * rough);
+      const denom = ndh * ndh * (a2 - 1.0) + 1.0;
+      const ggx = Math.min(3.2, a2 / Math.max(0.002, 3.14159265 * denom * denom));
+      const specAmt = ggx * geom * (0.04 + 0.96 * metal) * 0.32;
+      cR += (0.04 + (albR - 0.04) * metal) * specAmt;
+      cG += (0.04 + (albG - 0.04) * metal) * specAmt;
+      cB += (0.04 + (albB - 0.04) * metal) * specAmt;
+    }
+    return [cR * L.r, cG * L.g, cB * L.b];
+  }
+
+  const sunLen = Math.hypot(0.45, 0.72, -0.52);
+  const sunX = 0.45 / sunLen;
+  const sunY = 0.72 / sunLen;
+  const sunZ = -0.52 / sunLen;
+
+  // R2 low-discrepancy plastic-constant sequence constants (vastly smoother convergence than raw white noise!)
+  const R2_A1 = 0.7548776662466927;
+  const R2_A2 = 0.5698402909980532;
+
   const invW = 1.0 / width;
   const invH = 1.0 / height;
   const invSpp = 1.0 / spp;
 
-  let pOut = 0;
+  let pIdx = 0;
   for (let ly = 0; ly < tileH; ly++) {
     const py = tileY + ly;
     for (let lx = 0; lx < tileW; lx++) {
@@ -245,18 +343,28 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
       rng = (((px + 1) * 73856093) ^ ((py + 1) * 19349663) ^ 0x9e3779b9) >>> 0;
       if (rng === 0) rng = 1;
 
+      // Cranley-Patterson per-pixel random shift for R2 QMC sub-pixel & area-light stratification
+      const shiftX = rand();
+      const shiftY = rand();
+      const shiftLX = rand();
+      const shiftLY = rand();
+
       let accR = 0;
       let accG = 0;
       let accB = 0;
 
-      for (let s = 0; s < spp; s++) {
-        // Stratified subpixel jitter
-        const sx = (s % stratN + rand()) * invStratN;
-        const sy = (Math.floor(s / stratN) % stratN + rand()) * invStratN;
-        const ndcX = (px + sx) * invW * 2.0 - 1.0;
-        const ndcY = 1.0 - (py + sy) * invH * 2.0;
+      // Accumulated primary G-buffer averages (for crisp edge-stopping denoiser!)
+      let gNx = 0, gNy = 0, gNz = 0, gDepth = 0;
+      let gAlbR = 0, gAlbG = 0, gAlbB = 0;
+      let gHits = 0;
 
-        // Generate exact curvilinear or rectilinear primary camera ray
+      for (let s = 0; s < spp; s++) {
+        // R2 quasi-random subpixel jitter
+        const jx = (shiftX + (s + 1) * R2_A1) % 1.0;
+        const jy = (shiftY + (s + 1) * R2_A2) % 1.0;
+        const ndcX = (px + jx) * invW * 2.0 - 1.0;
+        const ndcY = 1.0 - (py + jy) * invH * 2.0;
+
         let cdX = 0;
         let cdY = 0;
         let cdZ = -1;
@@ -344,6 +452,7 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
         let tpR = 1;
         let tpG = 1;
         let tpB = 1;
+        let recordedPrimary = false;
 
         // 4-bounce physically based Monte Carlo path trace
         for (let bounce = 0; bounce < 4; bounce++) {
@@ -370,12 +479,21 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
             radR += tpR * sR;
             radG += tpG * sG;
             radB += tpB * sB;
+            if (!recordedPrimary) {
+              gDepth += 25.0;
+              gAlbR += sR;
+              gAlbG += sG;
+              gAlbB += sB;
+              gHits++;
+              recordedPrimary = true;
+            }
             break;
           }
 
-          const hpX = roX + rdX * hitT;
-          const hpY = roY + rdY * hitT;
-          const hpZ = roZ + rdZ * hitT;
+          const primT = hitT;
+          const hpX = roX + rdX * primT;
+          const hpY = roY + rdY * primT;
+          const hpZ = roZ + rdZ * primT;
 
           let nX = hitNx;
           let nY = hitNy;
@@ -405,7 +523,7 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
             radB += tpB * emB;
           }
 
-          // Clear dielectric glass (cabinet doors & windows): Fresnel reflection + crisp transmission
+          // Clear dielectric glass: Fresnel reflection + crisp transmission
           if (trans > 0.6) {
             const cosI = Math.min(1, Math.max(0, -(rdX * nX + rdY * nY + rdZ * nZ)));
             const omc = 1.0 - cosI;
@@ -433,76 +551,57 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
             continue;
           }
 
-          // Next Event Estimation on primary & first indirect bounce (captures >95% of direct soft shadows at 2x speed)
-          if (nLights > 0 && bounce <= 1) {
-            const lIdx = Math.min(nLights - 1, Math.floor(rand() * nLights));
-            const L = lights[lIdx];
-            const su = (rand() * 2.0 - 1.0) * L.halfU;
-            const sv = (rand() * 2.0 - 1.0) * L.halfV;
-            let lpX = L.cx;
-            let lpY = L.cy;
-            let lpZ = L.cz;
-            if (L.axis === 0) {
-              lpX += su;
-              lpY += sv;
-            } else if (L.axis === 1) {
-              lpZ += su;
-              lpY += sv;
-            } else {
-              lpX += su;
-              lpZ += sv;
-            }
+          // Record primary G-buffer (normal, depth, albedo) on first solid surface hit
+          if (!recordedPrimary) {
+            gNx += nX;
+            gNy += nY;
+            gNz += nZ;
+            gDepth += primT;
+            gAlbR += albR;
+            gAlbG += albG;
+            gAlbB += albB;
+            gHits++;
+            recordedPrimary = true;
+          }
 
-            const toLX = lpX - hpX;
-            const toLY = lpY - hpY;
-            const toLZ = lpZ - hpZ;
-            const distSq = Math.max(0.08, toLX * toLX + toLY * toLY + toLZ * toLZ);
-            const dist = Math.sqrt(distSq);
-            const invD = 1.0 / dist;
-            const ldX = toLX * invD;
-            const ldY = toLY * invD;
-            const ldZ = toLZ * invD;
-            const ndl = nX * ldX + nY * ldY + nZ * ldZ;
-
-            if (ndl > 0.001) {
-              const occluded = traceBVH(
-                hpX + nX * 0.0025,
-                hpY + nY * 0.0025,
-                hpZ + nZ * 0.0025,
-                ldX,
-                ldY,
-                ldZ,
-                dist - 0.03,
-                true
+          // Direct Next Event Estimation:
+          // - On primary hit (bounce === 0): evaluate ALL room area lights with R2 QMC area jitter (eliminates light-selection noise completely!)
+          // - On first indirect bounce (bounce === 1): luminance-weighted importance sampling (focuses rays on bright ceiling/lamp in Evening mode!)
+          if (nLights > 0 && bounce === 0) {
+            const uA = (shiftLX + (s + 1) * R2_A1) % 1.0;
+            const uB = (shiftLY + (s + 1) * R2_A2) % 1.0;
+            for (let li = 0; li < nLights; li++) {
+              // Decorrelate light jitter per light index
+              const luA = (uA + li * 0.37) % 1.0;
+              const luB = (uB + li * 0.61) % 1.0;
+              const contrib = evalAreaLightNEE(
+                li, 1.0, hpX, hpY, hpZ, nX, nY, nZ, rdX, rdY, rdZ,
+                albR, albG, albB, rough, metal, luA, luB
               );
-              if (!occluded) {
-                const area = 4.0 * L.halfU * L.halfV;
-                const geom = Math.min(3.5, (ndl * area * nLights) / (3.14159265 * distSq + 0.25));
-                const diffScale = (1.0 - metal) * geom;
-                let cR = albR * diffScale;
-                let cG = albG * diffScale;
-                let cB = albB * diffScale;
-
-                // Direct microfacet specular highlight on polished oak / metal hardware
-                const hx = ldX - rdX;
-                const hy = ldY - rdY;
-                const hz = ldZ - rdZ;
-                const hl = Math.hypot(hx, hy, hz);
-                if (hl > 1e-5) {
-                  const ndh = Math.max(0, (nX * hx + nY * hy + nZ * hz) / hl);
-                  const a2 = Math.max(0.004, rough * rough * rough * rough);
-                  const denom = ndh * ndh * (a2 - 1.0) + 1.0;
-                  const ggx = Math.min(4.5, a2 / Math.max(0.001, 3.14159265 * denom * denom));
-                  const specAmt = ggx * geom * (0.04 + 0.96 * metal) * 0.35;
-                  cR += (0.04 + (albR - 0.04) * metal) * specAmt;
-                  cG += (0.04 + (albG - 0.04) * metal) * specAmt;
-                  cB += (0.04 + (albB - 0.04) * metal) * specAmt;
-                }
-
-                radR += Math.min(8.0, tpR * cR * L.r);
-                radG += Math.min(8.0, tpG * cG * L.g);
-                radB += Math.min(8.0, tpB * cB * L.b);
+              if (contrib) {
+                radR += Math.min(6.0, tpR * contrib[0]);
+                radG += Math.min(6.0, tpG * contrib[1]);
+                radB += Math.min(6.0, tpB * contrib[2]);
               }
+            }
+          } else if (nLights > 0 && bounce === 1) {
+            const uSel = rand();
+            let li = nLights - 1;
+            for (let k = 0; k < nLights; k++) {
+              if (uSel <= lightCdf[k]) {
+                li = k;
+                break;
+              }
+            }
+            const invPdf = 1.0 / Math.max(0.05, lightProb[li]);
+            const contrib = evalAreaLightNEE(
+              li, invPdf, hpX, hpY, hpZ, nX, nY, nZ, rdX, rdY, rdZ,
+              albR, albG, albB, rough, metal, rand(), rand()
+            );
+            if (contrib) {
+              radR += Math.min(4.0, tpR * contrib[0]);
+              radG += Math.min(4.0, tpG * contrib[1]);
+              radB += Math.min(4.0, tpB * contrib[2]);
             }
           }
 
@@ -522,18 +621,21 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
           const bY = nZ * tX - nX * tZ;
           const bZ = nX * tY - nY * tX;
 
-          // Choose GGX specular lobe vs cosine-weighted diffuse lobe
+          // Choose GGX specular lobe vs cosine-weighted diffuse lobe (smoothly clamped to avoid fireflies on matte plaster)
           const cosV = Math.min(1, Math.max(0, -(rdX * nX + rdY * nY + rdZ * nZ)));
           const omv = 1.0 - cosV;
           const omv2 = omv * omv;
           const f0Avg = 0.04 + ((albR + albG + albB) * 0.3333 - 0.04) * metal;
-          const specProb = Math.min(0.95, Math.max(0.04, f0Avg + (1.0 - f0Avg) * omv2 * omv2 * omv * (1.0 - rough * 0.7)));
+          const specProb =
+            rough > 0.78 && metal < 0.1
+              ? 0.0
+              : Math.min(0.92, Math.max(0.06, f0Avg + (1.0 - f0Avg) * omv2 * omv2 * omv * (1.0 - rough * 0.75)));
 
           let nextX, nextY, nextZ;
-          if (rand() < specProb) {
+          if (specProb > 0.0 && rand() < specProb) {
             const u1 = rand();
             const u2 = rand();
-            const a = Math.max(0.03, rough * rough);
+            const a = Math.max(0.035, rough * rough);
             const phi = 6.2831853 * u2;
             const cosT = Math.sqrt((1.0 - u1) / Math.max(1e-5, 1.0 + (a * a - 1.0) * u1));
             const sinT = Math.sqrt(Math.max(0, 1.0 - cosT * cosT));
@@ -564,10 +666,10 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
               const sR = 0.04 + (albR - 0.04) * metal;
               const sG = 0.04 + (albG - 0.04) * metal;
               const sB = 0.04 + (albB - 0.04) * metal;
-              const w = Math.min(2.5, 1.0 / specProb);
-              tpR *= Math.min(0.95, sR * w + (1.0 - metal) * 0.25);
-              tpG *= Math.min(0.95, sG * w + (1.0 - metal) * 0.25);
-              tpB *= Math.min(0.95, sB * w + (1.0 - metal) * 0.25);
+              const w = Math.min(1.8, 1.0 / specProb);
+              tpR *= Math.min(0.92, sR * w + (1.0 - metal) * 0.22);
+              tpG *= Math.min(0.92, sG * w + (1.0 - metal) * 0.22);
+              tpB *= Math.min(0.92, sB * w + (1.0 - metal) * 0.22);
             }
           } else {
             const u1 = rand();
@@ -580,10 +682,10 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
             nextX = tX * rx + bX * ry + nX * rz;
             nextY = tY * rx + bY * ry + nY * rz;
             nextZ = tZ * rx + bZ * ry + nZ * rz;
-            const diffW = (1.0 - metal) / Math.max(0.05, 1.0 - specProb);
-            tpR *= Math.min(0.95, albR * diffW);
-            tpG *= Math.min(0.95, albG * diffW);
-            tpB *= Math.min(0.95, albB * diffW);
+            const diffW = (1.0 - metal) / Math.max(0.08, 1.0 - specProb);
+            tpR *= Math.min(0.92, albR * diffW);
+            tpG *= Math.min(0.92, albG * diffW);
+            tpB *= Math.min(0.92, albB * diffW);
           }
 
           const nl = 1.0 / Math.hypot(nextX, nextY, nextZ);
@@ -596,7 +698,7 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
 
           // Russian Roulette after bounce 1
           if (bounce >= 1) {
-            const pSurv = Math.min(0.9, Math.max(0.15, Math.max(tpR, Math.max(tpG, tpB))));
+            const pSurv = Math.min(0.9, Math.max(0.18, Math.max(tpR, Math.max(tpG, tpB))));
             if (rand() > pSurv) break;
             const invP = 1.0 / pSurv;
             tpR *= invP;
@@ -605,29 +707,61 @@ function renderTileKernel(cfg, tileX, tileY, tileW, tileH) {
           }
         }
 
-        // Subtle optical vignette on wide-angle curvilinear edges matching fisheyeLens.js
+        // Subtle optical vignette on extreme wide-angle corners
         let vig = 1.0;
         if (lensMode >= 0 && edgeRatio > 0.78) {
           const tV = Math.min(1, (edgeRatio - 0.78) / 0.70);
           vig = 1.0 - tV * tV * (3.0 - 2.0 * tV) * 0.14;
         }
 
-        accR += Math.min(10.0, radR * vig);
-        accG += Math.min(10.0, radG * vig);
-        accB += Math.min(10.0, radB * vig);
+        // Soft per-sample firefly clamp
+        accR += Math.min(7.0, radR * vig);
+        accG += Math.min(7.0, radG * vig);
+        accB += Math.min(7.0, radB * vig);
       }
 
-      const rLin = aces(accR * invSpp * exposure);
-      const gLin = aces(accG * invSpp * exposure);
-      const bLin = aces(accB * invSpp * exposure);
+      const linR = accR * invSpp;
+      const linG = accG * invSpp;
+      const linB = accB * invSpp;
 
-      out[pOut++] = Math.min(255, Math.max(0, Math.round(Math.pow(rLin, 1.0 / 2.2) * 255)));
-      out[pOut++] = Math.min(255, Math.max(0, Math.round(Math.pow(gLin, 1.0 / 2.2) * 255)));
-      out[pOut++] = Math.min(255, Math.max(0, Math.round(Math.pow(bLin, 1.0 / 2.2) * 255)));
-      out[pOut++] = 255;
+      const o3 = pIdx * 3;
+      const o4 = pIdx * 4;
+      hdrRad[o3] = linR;
+      hdrRad[o3 + 1] = linG;
+      hdrRad[o3 + 2] = linB;
+
+      if (gHits > 0) {
+        const invHts = 1.0 / gHits;
+        const nl = Math.hypot(gNx, gNy, gNz) || 1.0;
+        gNormDepth[o4] = gNx / nl;
+        gNormDepth[o4 + 1] = gNy / nl;
+        gNormDepth[o4 + 2] = gNz / nl;
+        gNormDepth[o4 + 3] = gDepth * invHts;
+        gAlbedo[o3] = gAlbR * invHts;
+        gAlbedo[o3 + 1] = gAlbG * invHts;
+        gAlbedo[o3 + 2] = gAlbB * invHts;
+      } else {
+        gNormDepth[o4] = 0;
+        gNormDepth[o4 + 1] = 1;
+        gNormDepth[o4 + 2] = 0;
+        gNormDepth[o4 + 3] = 25.0;
+        gAlbedo[o3] = linR;
+        gAlbedo[o3 + 1] = linG;
+        gAlbedo[o3 + 2] = linB;
+      }
+
+      // Preview sRGB pixel for live tile feedback
+      const rTm = aces(linR * exposure);
+      const gTm = aces(linG * exposure);
+      const bTm = aces(linB * exposure);
+      previewRgba[o4] = Math.min(255, Math.max(0, Math.round(Math.pow(rTm, 1.0 / 2.2) * 255)));
+      previewRgba[o4 + 1] = Math.min(255, Math.max(0, Math.round(Math.pow(gTm, 1.0 / 2.2) * 255)));
+      previewRgba[o4 + 2] = Math.min(255, Math.max(0, Math.round(Math.pow(bTm, 1.0 / 2.2) * 255)));
+      previewRgba[o4 + 3] = 255;
+      pIdx++;
     }
   }
-  return out;
+  return { previewRgba, hdrRad, gNormDepth, gAlbedo };
 }
 
 function buildWorkerBlobUrl() {
@@ -640,15 +774,23 @@ function buildWorkerBlobUrl() {
         cfg = msg.cfg;
         self.postMessage({ type: 'ready' });
       } else if (msg.type === 'tile' && cfg) {
-        const rgba = renderTileKernel(cfg, msg.x, msg.y, msg.w, msg.h);
+        const res = renderTileKernel(cfg, msg.x, msg.y, msg.w, msg.h);
         self.postMessage({
           type: 'tileDone',
           x: msg.x,
           y: msg.y,
           w: msg.w,
           h: msg.h,
-          rgbaBuffer: rgba.buffer
-        }, [rgba.buffer]);
+          previewBuf: res.previewRgba.buffer,
+          hdrBuf: res.hdrRad.buffer,
+          normDepthBuf: res.gNormDepth.buffer,
+          albedoBuf: res.gAlbedo.buffer
+        }, [
+          res.previewRgba.buffer,
+          res.hdrRad.buffer,
+          res.gNormDepth.buffer,
+          res.gAlbedo.buffer
+        ]);
       }
     };
   `;
@@ -656,23 +798,93 @@ function buildWorkerBlobUrl() {
   return URL.createObjectURL(blob);
 }
 
-// Fast 2-pass à-trous edge-preserving denoiser (~60ms at 1280x720): turns 8–32 spp Monte Carlo path tracing into velvet-smooth architectural renders while keeping cabinet edges sharp
-function atrousPass(src, width, height, step, sigmaColor) {
-  const dst = new Uint8ClampedArray(src.length);
-  const inv2Sig2 = 1.0 / (2.0 * sigmaColor * sigmaColor);
+// Step 1: Linear-HDR Firefly Despeckle (clips isolated hot outlier pixels > 2.6x their 3x3 neighborhood average)
+function despeckleHDR(src, width, height) {
+  const dst = new Float32Array(src.length);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const c3 = (y * width + x) * 3;
+      const cr = src[c3];
+      const cg = src[c3 + 1];
+      const cb = src[c3 + 2];
+      const cLum = cr * 0.2126 + cg * 0.7152 + cb * 0.0722;
+
+      let nSum = 0;
+      let nCnt = 0;
+      let avgR = 0;
+      let avgG = 0;
+      let avgB = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= height) continue;
+        const row = ny * width;
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = x + dx;
+          if (nx < 0 || nx >= width) continue;
+          const o3 = (row + nx) * 3;
+          const r = src[o3];
+          const g = src[o3 + 1];
+          const b = src[o3 + 2];
+          avgR += r;
+          avgG += g;
+          avgB += b;
+          nSum += r * 0.2126 + g * 0.7152 + b * 0.0722;
+          nCnt++;
+        }
+      }
+      const nAvg = nSum / Math.max(1, nCnt);
+      if (cLum > Math.max(0.08, nAvg * 2.4)) {
+        const inv = 1.0 / Math.max(1, nCnt);
+        dst[c3] = avgR * inv;
+        dst[c3 + 1] = avgG * inv;
+        dst[c3 + 2] = avgB * inv;
+      } else {
+        dst[c3] = cr;
+        dst[c3 + 1] = cg;
+        dst[c3 + 2] = cb;
+      }
+    }
+  }
+  return dst;
+}
+
+// Step 2: G-Buffer Guided (Normal + Depth + Albedo + Radiance) À-Trous Edge-Stopping Denoiser
+// Operates in linear HDR radiance space so walls, ceilings, and oak panels become velvet-smooth
+// while cabinet doors, window mullions, furniture silhouettes, and wood grain stay razor-sharp!
+function guidedAtrousPass(src, gNormDepth, gAlbedo, width, height, step, sigmaRad) {
+  const dst = new Float32Array(src.length);
   const kW = [0.25, 0.72, 1.0, 0.72, 0.25];
+  const inv2SigRad2 = 1.0 / (2.0 * sigmaRad * sigmaRad);
+  const inv2SigAlb2 = 1.0 / (2.0 * 0.14 * 0.14);
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const cOff = (y * width + x) * 4;
-      const cr = src[cOff];
-      const cg = src[cOff + 1];
-      const cb = src[cOff + 2];
+      const idx = y * width + x;
+      const c3 = idx * 3;
+      const c4 = idx * 4;
 
-      let sumR = 0;
-      let sumG = 0;
-      let sumB = 0;
-      let sumW = 0;
+      const cr = src[c3];
+      const cg = src[c3 + 1];
+      const cb = src[c3 + 2];
+
+      const cnx = gNormDepth[c4];
+      const cny = gNormDepth[c4 + 1];
+      const cnz = gNormDepth[c4 + 2];
+      const cDepth = gNormDepth[c4 + 3];
+
+      const car = gAlbedo[c3];
+      const cag = gAlbedo[c3 + 1];
+      const cab = gAlbedo[c3 + 2];
+
+      // Adaptive depth threshold proportional to viewing distance
+      const depthThresh = Math.max(0.08, cDepth * 0.08);
+      const inv2SigD2 = 1.0 / (2.0 * depthThresh * depthThresh);
+
+      let sumR = cr;
+      let sumG = cg;
+      let sumB = cb;
+      let sumW = 1.0;
 
       for (let ky = -2; ky <= 2; ky++) {
         const ny = y + ky * step;
@@ -680,51 +892,111 @@ function atrousPass(src, width, height, step, sigmaColor) {
         const wy = kW[ky + 2];
         const rowOff = ny * width;
         for (let kx = -2; kx <= 2; kx++) {
+          if (kx === 0 && ky === 0) continue;
           const nx = x + kx * step;
           if (nx < 0 || nx >= width) continue;
-          const o = (rowOff + nx) * 4;
-          const r = src[o];
-          const g = src[o + 1];
-          const b = src[o + 2];
+
+          const nIdx = rowOff + nx;
+          const o4 = nIdx * 4;
+
+          // Edge-stopping weight #1: surface normal alignment (keeps 90° wall/cabinet corners razor sharp!)
+          const ndot = cnx * gNormDepth[o4] + cny * gNormDepth[o4 + 1] + cnz * gNormDepth[o4 + 2];
+          if (ndot < 0.72) continue;
+          const wN = ndot * ndot * ndot * ndot;
+
+          // Edge-stopping weight #2: depth discontinuity (prevents bleeding foreground furniture onto walls!)
+          const dd = gNormDepth[o4 + 3] - cDepth;
+          const wD = Math.exp(-(dd * dd) * inv2SigD2);
+          if (wD < 0.02) continue;
+
+          // Edge-stopping weight #3: albedo / wood-grain contrast
+          const o3 = nIdx * 3;
+          const dar = gAlbedo[o3] - car;
+          const dag = gAlbedo[o3 + 1] - cag;
+          const dab = gAlbedo[o3 + 2] - cab;
+          const wA = Math.exp(-(dar * dar + dag * dag + dab * dab) * inv2SigAlb2);
+
+          // Edge-stopping weight #4: soft radiance similarity (preserves crisp shadow edges!)
+          const r = src[o3];
+          const g = src[o3 + 1];
+          const b = src[o3 + 2];
           const dr = r - cr;
           const dg = g - cg;
           const db = b - cb;
-          const dist2 = dr * dr + dg * dg + db * db;
-          const w = wy * kW[kx + 2] * Math.exp(-dist2 * inv2Sig2);
+          const wR = Math.exp(-(dr * dr + dg * dg + db * db) * inv2SigRad2);
+
+          const w = wy * kW[kx + 2] * wN * wD * wA * wR;
           sumR += r * w;
           sumG += g * w;
           sumB += b * w;
           sumW += w;
         }
       }
-      const invW = sumW > 1e-6 ? 1.0 / sumW : 1.0;
-      dst[cOff] = Math.round(sumR * invW);
-      dst[cOff + 1] = Math.round(sumG * invW);
-      dst[cOff + 2] = Math.round(sumB * invW);
-      dst[cOff + 3] = 255;
+
+      const invW = 1.0 / sumW;
+      dst[c3] = sumR * invW;
+      dst[c3 + 1] = sumG * invW;
+      dst[c3 + 2] = sumB * invW;
     }
   }
   return dst;
 }
 
-function bilateralDenoiseRGBA(src, width, height) {
-  const pass1 = atrousPass(src, width, height, 1, 62);
-  return atrousPass(pass1, width, height, 2, 42);
+function tonemapHDRToRGBA(hdr, width, height, exposure) {
+  const nPix = width * height;
+  const rgba = new Uint8ClampedArray(nPix * 4);
+  for (let i = 0; i < nPix; i++) {
+    const o3 = i * 3;
+    const o4 = i * 4;
+    let r = Math.max(0, hdr[o3] * exposure);
+    let g = Math.max(0, hdr[o3 + 1] * exposure);
+    let b = Math.max(0, hdr[o3 + 2] * exposure);
+    r = Math.min(1, (r * (2.51 * r + 0.03)) / (r * (2.43 * r + 0.59) + 0.14));
+    g = Math.min(1, (g * (2.51 * g + 0.03)) / (g * (2.43 * g + 0.59) + 0.14));
+    b = Math.min(1, (b * (2.51 * b + 0.03)) / (b * (2.43 * b + 0.59) + 0.14));
+    rgba[o4] = Math.min(255, Math.max(0, Math.round(Math.pow(r, 1.0 / 2.2) * 255)));
+    rgba[o4 + 1] = Math.min(255, Math.max(0, Math.round(Math.pow(g, 1.0 / 2.2) * 255)));
+    rgba[o4 + 2] = Math.min(255, Math.max(0, Math.round(Math.pow(b, 1.0 / 2.2) * 255)));
+    rgba[o4 + 3] = 255;
+  }
+  return rgba;
 }
 
 /**
  * Multi-core CPU PBR Photo-Mode Path Tracer.
- * Renders tiles from the center outward across Web Workers (with automatic main-thread fallback).
+ * Renders tiles from the center outward across Web Workers (with automatic main-thread fallback),
+ * then applies Linear-HDR Firefly Despeckle + 3-pass G-Buffer Guided À-Trous Denoising.
  * Returns { cancel(), promise } where promise resolves to { width, height, rgba, elapsedMs, threads, cancelled }.
  */
 export function renderCPUPBRPhoto(rtScene, cameraState, options = {}, callbacks = {}) {
   const width = Math.max(160, Math.round(options.width || 1280));
   const height = Math.max(120, Math.round(options.height || 720));
-  const spp = Math.max(4, Math.round(options.spp || 16));
-  const tileSize = options.tileSize || 48;
-  const exposure = rtScene.isEvening ? 1.18 : 1.06;
+  const spp = Math.max(4, Math.round(options.spp || 128));
+  const tileSize = options.tileSize || 32;
+  const exposure = rtScene.isEvening ? 1.24 : 1.06;
 
-  // Build tile queue sorted from center outward so focal furniture renders first!
+  // Build luminance-weighted CDF for bounce-1 light importance sampling
+  const lights = rtScene.lights || [];
+  const nL = lights.length;
+  const lightProb = new Float32Array(Math.max(1, nL));
+  const lightCdf = new Float32Array(Math.max(1, nL));
+  let powerSum = 0;
+  for (let i = 0; i < nL; i++) {
+    const L = lights[i];
+    const area = 4.0 * L.halfU * L.halfV;
+    const lum = L.r * 0.2126 + L.g * 0.7152 + L.b * 0.0722;
+    const p = Math.max(0.05, lum * area);
+    lightProb[i] = p;
+    powerSum += p;
+  }
+  let accP = 0;
+  for (let i = 0; i < nL; i++) {
+    lightProb[i] = powerSum > 0 ? lightProb[i] / powerSum : 1 / Math.max(1, nL);
+    accP += lightProb[i];
+    lightCdf[i] = i === nL - 1 ? 1.0 : accP;
+  }
+
+  // Build tile queue sorted from center outward so focal furniture resolves first!
   const tiles = [];
   const cx = width * 0.5;
   const cy = height * 0.5;
@@ -740,7 +1012,11 @@ export function renderCPUPBRPhoto(rtScene, cameraState, options = {}, callbacks 
   tiles.sort((a, b) => a.d2 - b.d2);
 
   const totalTiles = tiles.length;
-  const fullRgba = new Uint8ClampedArray(width * height * 4);
+  const nPix = width * height;
+  const fullHdr = new Float32Array(nPix * 3);
+  const fullNormDepth = new Float32Array(nPix * 4);
+  const fullAlbedo = new Float32Array(nPix * 3);
+  const fullPreviewRgba = new Uint8ClampedArray(nPix * 4);
   const tStart = performance.now();
 
   let cancelled = false;
@@ -767,7 +1043,9 @@ export function renderCPUPBRPhoto(rtScene, cameraState, options = {}, callbacks 
     bvhNodes: rtScene.bvhNodes,
     triData: rtScene.triData,
     matData: rtScene.matData,
-    lights: rtScene.lights,
+    lights,
+    lightCdf,
+    lightProb,
     isEvening: !!rtScene.isEvening,
     exposure,
     width,
@@ -781,21 +1059,29 @@ export function renderCPUPBRPhoto(rtScene, cameraState, options = {}, callbacks 
     halfFovVal: cameraState.halfFovVal,
   };
 
-  const blitTileIntoFull = (x, y, w, h, tileRgba) => {
+  const blitTileBuffers = (x, y, w, h, previewRgba, hdrRad, gNormDepth, gAlbedo) => {
     for (let row = 0; row < h; row++) {
-      const srcOff = row * w * 4;
-      const dstOff = ((y + row) * width + x) * 4;
-      fullRgba.set(tileRgba.subarray(srcOff, srcOff + w * 4), dstOff);
+      const dstRow = (y + row) * width + x;
+      const srcRow = row * w;
+      fullPreviewRgba.set(previewRgba.subarray(srcRow * 4, (srcRow + w) * 4), dstRow * 4);
+      fullHdr.set(hdrRad.subarray(srcRow * 3, (srcRow + w) * 3), dstRow * 3);
+      fullNormDepth.set(gNormDepth.subarray(srcRow * 4, (srcRow + w) * 4), dstRow * 4);
+      fullAlbedo.set(gAlbedo.subarray(srcRow * 3, (srcRow + w) * 3), dstRow * 3);
     }
   };
 
   const finishAndDenoise = (threads, resolve) => {
-    const denoised = bilateralDenoiseRGBA(fullRgba, width, height);
-    if (callbacks.onTile) callbacks.onTile(0, 0, width, height, denoised);
+    // Linear-HDR despeckle + 3-pass G-Buffer guided à-trous denoiser (steps 1, 2, 4)
+    const clean = despeckleHDR(fullHdr, width, height);
+    const p1 = guidedAtrousPass(clean, fullNormDepth, fullAlbedo, width, height, 1, 0.42);
+    const p2 = guidedAtrousPass(p1, fullNormDepth, fullAlbedo, width, height, 2, 0.30);
+    const p3 = guidedAtrousPass(p2, fullNormDepth, fullAlbedo, width, height, 4, 0.22);
+    const finalRgba = tonemapHDRToRGBA(p3, width, height, exposure);
+    if (callbacks.onTile) callbacks.onTile(0, 0, width, height, finalRgba);
     resolve({
       width,
       height,
-      rgba: denoised,
+      rgba: finalRgba,
       elapsedMs: Math.round(performance.now() - tStart),
       threads,
       cancelled: false,
@@ -805,11 +1091,10 @@ export function renderCPUPBRPhoto(rtScene, cameraState, options = {}, callbacks 
   const promise = new Promise((resolve) => {
     resolveFn = resolve;
 
-    const maxWorkers = Math.max(1, Math.min(options.maxWorkers || 12, navigator.hardwareConcurrency || 4, totalTiles));
+    const maxWorkers = Math.max(1, Math.min(options.maxWorkers || 16, navigator.hardwareConcurrency || 4, totalTiles));
     let nextTileIdx = 0;
     let doneTiles = 0;
 
-    // Try multi-core Blob Web Workers first
     let useWorkers = typeof Worker !== 'undefined';
     if (useWorkers) {
       try {
@@ -840,10 +1125,13 @@ export function renderCPUPBRPhoto(rtScene, cameraState, options = {}, callbacks 
           if (msg.type === 'ready') {
             dispatchNext(worker);
           } else if (msg.type === 'tileDone') {
-            const tileRgba = new Uint8ClampedArray(msg.rgbaBuffer);
-            blitTileIntoFull(msg.x, msg.y, msg.w, msg.h, tileRgba);
+            const previewRgba = new Uint8ClampedArray(msg.previewBuf);
+            const hdrRad = new Float32Array(msg.hdrBuf);
+            const gNormDepth = new Float32Array(msg.normDepthBuf);
+            const gAlbedo = new Float32Array(msg.albedoBuf);
+            blitTileBuffers(msg.x, msg.y, msg.w, msg.h, previewRgba, hdrRad, gNormDepth, gAlbedo);
             doneTiles++;
-            if (callbacks.onTile) callbacks.onTile(msg.x, msg.y, msg.w, msg.h, tileRgba);
+            if (callbacks.onTile) callbacks.onTile(msg.x, msg.y, msg.w, msg.h, previewRgba);
             if (callbacks.onProgress) {
               callbacks.onProgress({
                 pct: Math.round((doneTiles / totalTiles) * 100),
@@ -871,14 +1159,14 @@ export function renderCPUPBRPhoto(rtScene, cameraState, options = {}, callbacks 
       return;
     }
 
-    // Main-thread async chunked fallback (never blocks UI completely)
+    // Main-thread async chunked fallback
     const stepFallback = () => {
       if (cancelled) return;
       const t = tiles[nextTileIdx++];
-      const tileRgba = renderTileKernel(cfg, t.x, t.y, t.w, t.h);
-      blitTileIntoFull(t.x, t.y, t.w, t.h, tileRgba);
+      const res = renderTileKernel(cfg, t.x, t.y, t.w, t.h);
+      blitTileBuffers(t.x, t.y, t.w, t.h, res.previewRgba, res.hdrRad, res.gNormDepth, res.gAlbedo);
       doneTiles++;
-      if (callbacks.onTile) callbacks.onTile(t.x, t.y, t.w, t.h, tileRgba);
+      if (callbacks.onTile) callbacks.onTile(t.x, t.y, t.w, t.h, res.previewRgba);
       if (callbacks.onProgress) {
         callbacks.onProgress({
           pct: Math.round((doneTiles / totalTiles) * 100),
@@ -906,7 +1194,7 @@ export function renderCPUPBRPhoto(rtScene, cameraState, options = {}, callbacks 
         resolveFn({
           width,
           height,
-          rgba: fullRgba,
+          rgba: fullPreviewRgba,
           elapsedMs: Math.round(performance.now() - tStart),
           threads: 0,
           cancelled: true,

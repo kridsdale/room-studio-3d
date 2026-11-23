@@ -4755,7 +4755,7 @@ async function snapPhoto() {
   activeCPURenderJob = renderCPUPBRPhoto(
     rtScene,
     camState,
-    { width: preset.width, height: preset.height, spp: preset.spp, tileSize: 48 },
+    { width: preset.width, height: preset.height, spp: preset.spp, tileSize: 32, maxWorkers: 16 },
     {
       onTile(x, y, w, h, rgba) {
         const imgData = new ImageData(rgba, w, h);
@@ -4764,7 +4764,10 @@ async function snapPhoto() {
       onProgress({ pct, doneTiles, totalTiles, threads, elapsedMs }) {
         if (fillEl) fillEl.style.width = `${pct}%`;
         if (lblEl) {
-          lblEl.textContent = `${pct}% · ${doneTiles}/${totalTiles} tiles · ${threads} CPU ${threads === 1 ? 'thread' : 'threads'} · ${(elapsedMs / 1000).toFixed(1)}s`;
+          lblEl.textContent =
+            pct >= 100
+              ? `100% · Running G-Buffer Guided Denoiser… (${(elapsedMs / 1000).toFixed(1)}s)`
+              : `${pct}% · ${doneTiles}/${totalTiles} tiles · ${threads} CPU ${threads === 1 ? 'thread' : 'threads'} · ${(elapsedMs / 1000).toFixed(1)}s`;
         }
       },
     }
