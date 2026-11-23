@@ -70,7 +70,242 @@ function tryPlaceCandidate(placed, catalogId, candidates, finish, room) {
   return null;
 }
 
-export function generateOptimizedLayout(room, retainedDeskId, goal = 'any', lastArchetypeId = null) {
+function generateHotlistOptimizedLayout(room, retainedDeskId, goal, lastArchetypeId, hotlistIds) {
+  const halfW = room.widthIn / 2;
+  const halfL = room.lengthIn / 2;
+  const flareL = room.swFlareLengthIn || 44;
+  const straightWestMaxZ = halfL - flareL - 2;
+  const palette = pick(PALETTES);
+  const deskCat = ALL_CATALOG[retainedDeskId] || ALL_CATALOG.retained_wood_desk;
+  const loveCat = ALL_CATALOG.retained_loveseat;
+
+  const validHotlist = Array.from(new Set(hotlistIds)).filter((id) => ALL_CATALOG[id]);
+  const archetypes = [
+    { id: 'hotlist_west_gallery', title: 'Considering Hotlist · West Storage Wall' },
+    { id: 'hotlist_east_gallery', title: 'Considering Hotlist · East Storage Wall' },
+    { id: 'hotlist_dual_studio',  title: 'Considering Hotlist · Studio Split' },
+    { id: 'hotlist_lounge_focus', title: 'Considering Hotlist · Lounge & Display' },
+  ];
+  let pool = archetypes;
+  if (pool.length > 1 && lastArchetypeId) {
+    pool = pool.filter((a) => a.id !== lastArchetypeId);
+  }
+  const arch = pick(pool);
+  const placed = [];
+
+  // Dense candidate generators respecting straight West run, East window/closet, and North window
+  const makeWallSweep = (wall, step = 6) => {
+    const out = [];
+    if (wall === 'west') {
+      for (let z = -halfL + 10; z <= straightWestMaxZ; z += step) {
+        out.push({ x: -halfW + 10, z, rotDeg: 90, wallSnap: true });
+      }
+    } else if (wall === 'east') {
+      for (let z = -halfL + 10; z <= halfL - 20; z += step) {
+        out.push({ x: halfW - 10, z, rotDeg: -90, wallSnap: true });
+      }
+    } else if (wall === 'north') {
+      for (let x = -halfW + 12; x <= halfW - 12; x += step) {
+        out.push({ x, z: -halfL + 10, rotDeg: 0, wallSnap: true });
+      }
+    }
+    return out;
+  };
+
+  const westWallCands = (zList) => zList.map((z) => ({ x: -halfW + 10, z, rotDeg: 90, wallSnap: true }));
+  const eastWallCands = (zList) => zList.map((z) => ({ x: halfW - 10, z, rotDeg: -90, wallSnap: true }));
+  const northWallCands = (xList) => xList.map((x) => ({ x, z: -halfL + 10, rotDeg: 0, wallSnap: true }));
+
+  // Separate hotlist into placement phases (rugs -> desks/chairs -> large cabinets/beds -> small accents -> wall-mounted)
+  const rugs = [];
+  const chairs = [];
+  const wallItems = [];
+  const bigPieces = [];
+  const accents = [];
+  let has42DeskInHotlist = false;
+
+  for (const id of validHotlist) {
+    const c = ALL_CATALOG[id];
+    if (!c || c.retained) continue;
+    if (id === 'desk_42_monitor') {
+      has42DeskInHotlist = true;
+      continue;
+    }
+    if (c.isRug) rugs.push(c);
+    else if (c.wallMounted) wallItems.push(c);
+    else if (c.meshType === 'office_chair') chairs.push(c);
+    else if (c.isLamp || c.meshType === 'plant' || c.stackable || (c.w <= 22 && c.d <= 22)) accents.push(c);
+    else bigPieces.push(c);
+  }
+
+  // 1. Place hotlisted rug first (if user shortlisted one!)
+  if (rugs.length > 0) {
+    const rugCat = pick(rugs);
+    tryPlaceCandidate(
+      placed,
+      rugCat.id,
+      [
+        { x: 0, z: -10, rotDeg: 0, wallSnap: false },
+        { x: 4, z: -14, rotDeg: 0, wallSnap: false },
+        { x: -4, z: -8, rotDeg: 0, wallSnap: false },
+      ],
+      resolveFinish(rugCat, palette, 'rug'),
+      room
+    );
+  }
+
+  // 2. Place user's Retained Loveseat & Retained Desk (plus Move-In 42" desk ONLY if dual_office or explicitly shortlisted)
+  const desksPlaced = [];
+  const want42Desk = has42DeskInHotlist || goal === 'dual_office';
+  if (arch.id === 'hotlist_west_gallery') {
+    tryPlaceCandidate(placed, 'retained_loveseat', northWallCands([20, 14, 24, -18]), 'slateBlue', room);
+    const d1 = tryPlaceCandidate(placed, deskCat.id, eastWallCands([18, 22, 12, 26]), deskCat.defaultFinish, room);
+    if (d1) desksPlaced.push(d1);
+    if (want42Desk) {
+      const d2 = tryPlaceCandidate(placed, 'desk_42_monitor', eastWallCands([-34, -30, -38]).concat(westWallCands([-10, -24])), resolveFinish(ALL_CATALOG.desk_42_monitor, palette, 'wood'), room);
+      if (d2) desksPlaced.push(d2);
+    }
+  } else if (arch.id === 'hotlist_east_gallery') {
+    tryPlaceCandidate(placed, 'retained_loveseat', northWallCands([-20, -14, 20]), 'slateBlue', room);
+    const d1 = tryPlaceCandidate(placed, deskCat.id, westWallCands([14, 10, 18, -8]), deskCat.defaultFinish, room);
+    if (d1) desksPlaced.push(d1);
+    if (want42Desk) {
+      const d2 = tryPlaceCandidate(placed, 'desk_42_monitor', westWallCands([-48, -42, -52]).concat(eastWallCands([16, -24])), resolveFinish(ALL_CATALOG.desk_42_monitor, palette, 'wood'), room);
+      if (d2) desksPlaced.push(d2);
+    }
+  } else if (arch.id === 'hotlist_lounge_focus') {
+    tryPlaceCandidate(
+      placed,
+      'retained_loveseat',
+      [
+        { x: halfW - loveCat.d / 2 - 1, z: -48, rotDeg: -90, wallSnap: true },
+        { x: -halfW + loveCat.d / 2 + 1, z: -46, rotDeg: 90, wallSnap: true },
+        { x: 18, z: -halfL + loveCat.d / 2 + 1, rotDeg: 0, wallSnap: true },
+      ],
+      'slateBlue',
+      room
+    );
+    const d1 = tryPlaceCandidate(placed, deskCat.id, eastWallCands([20, 24, 14]).concat(westWallCands([14, 10])), deskCat.defaultFinish, room);
+    if (d1) desksPlaced.push(d1);
+    if (want42Desk) {
+      const d2 = tryPlaceCandidate(placed, 'desk_42_monitor', westWallCands([-10, -24, 12]), resolveFinish(ALL_CATALOG.desk_42_monitor, palette, 'wood'), room);
+      if (d2) desksPlaced.push(d2);
+    }
+  } else {
+    // hotlist_dual_studio
+    tryPlaceCandidate(placed, 'retained_loveseat', northWallCands([22, -20, 16]), 'slateBlue', room);
+    if (want42Desk) {
+      const d2 = tryPlaceCandidate(placed, 'desk_42_monitor', westWallCands([-8, -16, 4]), resolveFinish(ALL_CATALOG.desk_42_monitor, palette, 'wood'), room);
+      if (d2) desksPlaced.push(d2);
+    }
+    const d1 = tryPlaceCandidate(placed, deskCat.id, eastWallCands([20, 14, 24]), deskCat.defaultFinish, room);
+    if (d1) desksPlaced.push(d1);
+  }
+
+  // 3. Pair any shortlisted office chairs cleanly in front of placed desks
+  for (let i = 0; i < chairs.length; i++) {
+    const ch = chairs[i];
+    const targetDesk = desksPlaced[i % Math.max(1, desksPlaced.length)];
+    const cands = [];
+    if (targetDesk) {
+      const rad = (targetDesk.rotDeg * Math.PI) / 180;
+      const fx = Math.sin(rad);
+      const fz = Math.cos(rad);
+      for (const dist of [28, 25, 22]) {
+        cands.push({ x: targetDesk.x + fx * dist, z: targetDesk.z + fz * dist, rotDeg: (targetDesk.rotDeg + 180) % 360, wallSnap: false });
+      }
+    }
+    cands.push({ x: 0, z: 0, rotDeg: 0, wallSnap: false }, { x: 10, z: -12, rotDeg: 90, wallSnap: false });
+    tryPlaceCandidate(placed, ch.id, cands, resolveFinish(ch, palette, 'fabric'), room);
+  }
+
+  // 4. Pack all shortlisted cabinets, storage, beds, seating & tables (largest first with slight shuffle!)
+  const sortedBig = [...bigPieces].sort((a, b) => b.w * b.d - a.w * a.d);
+  // Swap adjacent similarly-sized items randomly so Shuffle yields fresh arrangements!
+  for (let i = 0; i + 1 < sortedBig.length; i++) {
+    if (Math.random() < 0.45) {
+      [sortedBig[i], sortedBig[i + 1]] = [sortedBig[i + 1], sortedBig[i]];
+    }
+  }
+
+  const wallOrder =
+    arch.id === 'hotlist_east_gallery'
+      ? ['east', 'west', 'north']
+      : arch.id === 'hotlist_lounge_focus'
+      ? ['west', 'north', 'east']
+      : ['west', 'east', 'north'];
+
+  for (const cat of sortedBig) {
+    const cands = [];
+    if (cat.meshType === 'coffee_rect' || cat.meshType === 'coffee_round') {
+      cands.push(
+        { x: 4, z: -24, rotDeg: 0, wallSnap: false },
+        { x: 0, z: -18, rotDeg: 0, wallSnap: false },
+        { x: -6, z: -22, rotDeg: 90, wallSnap: false },
+        { x: 6, z: 4, rotDeg: 0, wallSnap: false }
+      );
+    }
+    for (const wName of wallOrder) {
+      const sweep = makeWallSweep(wName, 6);
+      cands.push(...(Math.random() < 0.5 ? sweep : sweep.reverse()));
+    }
+    const role = cat.category === 'seating' ? 'fabric' : cat.category === 'storage' ? 'storage' : 'wood';
+    const item = tryPlaceCandidate(placed, cat.id, cands, resolveFinish(cat, palette, role), room);
+    if (item && cat.defaultFrontStyle) {
+      item.frontStyle = cat.defaultFrontStyle;
+    }
+  }
+
+  // 5. Place shortlisted wall-mounted shelves cleanly along available walls above desks/low items
+  for (const cat of shuffled(wallItems)) {
+    const cands = [...makeWallSweep('east', 10), ...makeWallSweep('west', 10), ...makeWallSweep('north', 10)];
+    tryPlaceCandidate(placed, cat.id, cands, resolveFinish(cat, palette, 'storage'), room);
+  }
+
+  // 6. Place shortlisted lamps, plants, and small side tables
+  const accentSpots = shuffled([
+    { x: halfW - 8, z: -halfL + 8, rotDeg: 0, wallSnap: true },
+    { x: -halfW + 9, z: -halfL + 9, rotDeg: 0, wallSnap: true },
+    { x: halfW - 8, z: -36, rotDeg: -90, wallSnap: true },
+    { x: halfW - 8, z: 54, rotDeg: -90, wallSnap: true },
+    { x: -halfW + 10, z: 36, rotDeg: 90, wallSnap: true },
+    ...desksPlaced.map((d) => ({ x: d.x, z: d.z, rotDeg: 0, wallSnap: false })),
+  ]);
+  for (const cat of shuffled(accents)) {
+    const role = cat.isLamp ? 'lamp' : cat.meshType === 'plant' ? 'plant' : 'wood';
+    tryPlaceCandidate(placed, cat.id, shuffled(accentSpots), resolveFinish(cat, palette, role), room);
+  }
+
+  let ikeaCost = 0;
+  let ikeaCount = 0;
+  const hotlistSet = new Set(validHotlist);
+  let hotlistPlaced = 0;
+  for (const it of placed) {
+    const c = ALL_CATALOG[it.catalogId];
+    if (c && !c.retained && c.brand === 'IKEA') {
+      ikeaCost += c.price;
+      ikeaCount++;
+    }
+    if (hotlistSet.has(it.catalogId)) hotlistPlaced++;
+  }
+
+  return {
+    archetypeId: arch.id,
+    title: `${arch.title} (${hotlistPlaced}/${validHotlist.length} Hotlist)`,
+    paletteName: palette.name,
+    ikeaCount,
+    ikeaCost,
+    items: placed,
+    hotlistOnly: true,
+    hotlistPlaced,
+    hotlistTotal: validHotlist.length,
+  };
+}
+
+export function generateOptimizedLayout(room, retainedDeskId, goal = 'any', lastArchetypeId = null, opts = {}) {
+  if (opts?.hotlistOnly && Array.isArray(opts.hotlistIds) && opts.hotlistIds.length > 0) {
+    return generateHotlistOptimizedLayout(room, retainedDeskId, goal, lastArchetypeId, opts.hotlistIds);
+  }
   const halfW = room.widthIn / 2;
   const halfL = room.lengthIn / 2;
   const palette = pick(PALETTES);

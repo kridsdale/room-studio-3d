@@ -100,6 +100,7 @@ export const FRONT_FINISH_CHOICES = [
 export const CATEGORIES = [
   { id: 'all',          label: 'All Items',     icon: 'grid' },
   { id: 'renton_picks', label: '★ Renton Picks', icon: 'star' },
+  { id: 'considering',  label: '♥ Considering',  icon: 'bookmark' },
   { id: 'beds',         label: 'Beds',          icon: 'bed' },
   { id: 'seating',      label: 'Seating',       icon: 'sofa' },
   { id: 'storage',      label: 'Storage',       icon: 'cabinet' },

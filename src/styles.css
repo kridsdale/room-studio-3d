@@ -3030,6 +3030,227 @@ html, body {
   text-decoration: underline;
 }
 
+/* ======================== CONSIDERING HOTLIST (PRE-CART) ======================== */
+.cat-tab.considering-tab {
+  color: #be123c;
+  border-color: rgba(190, 18, 60, 0.25);
+  background: rgba(190, 18, 60, 0.06);
+}
+
+.cat-tab.considering-tab.active {
+  background: #be123c;
+  color: #fff;
+  border-color: #be123c;
+}
+
+.card-hotlist-btn {
+  position: absolute;
+  bottom: 5px;
+  right: 5px;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  transition: transform 0.12s, background 0.12s, color 0.12s, border-color 0.12s;
+  padding: 0;
+}
+
+.card-hotlist-btn:hover {
+  transform: scale(1.1);
+  color: #be123c;
+  border-color: rgba(190, 18, 60, 0.4);
+}
+
+.card-hotlist-btn.active {
+  background: #be123c;
+  color: #fff;
+  border-color: #be123c;
+}
+
+.hotlist-rail-card {
+  border-color: rgba(190, 18, 60, 0.18);
+}
+
+.hotlist-only-row {
+  color: #9f1239;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.hotlist-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 92px;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+
+.hotlist-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(190, 18, 60, 0.09);
+  border: 1px solid rgba(190, 18, 60, 0.22);
+  color: #881337;
+  border-radius: 999px;
+  padding: 2px 6px 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  max-width: 100%;
+}
+
+.hotlist-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 122px;
+}
+
+.hotlist-chip button {
+  border: none;
+  background: transparent;
+  color: #be123c;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  font-weight: 700;
+}
+
+.hotlist-empty {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.hotlist-quick-btn {
+  margin-top: 5px;
+  width: 100%;
+  font-size: 10.5px;
+  padding: 4px 6px;
+}
+
+.opt-hotlist-btn {
+  border: 1px solid rgba(190, 18, 60, 0.35);
+  background: rgba(190, 18, 60, 0.08);
+  color: #be123c;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.14s;
+}
+
+.opt-hotlist-btn.active {
+  background: #be123c;
+  color: #fff;
+  border-color: #be123c;
+}
+
+.agent-hotlist-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(190, 18, 60, 0.06);
+  border-bottom: 1px solid rgba(190, 18, 60, 0.15);
+  font-size: 11px;
+}
+
+.agent-hotlist-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: #9f1239;
+  cursor: pointer;
+}
+
+.agent-hotlist-label input {
+  accent-color: #be123c;
+}
+
+.insp-hotlist-btn {
+  font-size: 13px !important;
+  color: #64748b;
+}
+
+.insp-hotlist-btn.active {
+  background: #be123c !important;
+  color: #fff !important;
+  border-color: #be123c !important;
+}
+
+/* ======================== VERTICAL HEIGHT CONTROLS (WALL SHELF & EYE CAMERA) ======================== */
+.insp-mount-box {
+  background: rgba(14, 165, 233, 0.06);
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  border-radius: 10px;
+  padding: 9px 10px;
+}
+
+.mount-controls {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.fe-height-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-left: 6px;
+  border-left: 1px solid rgba(15, 23, 42, 0.14);
+  white-space: nowrap;
+}
+
+.fe-height-group .fe-label {
+  white-space: nowrap;
+}
+
+.fe-height-slider {
+  width: 58px !important;
+}
+
+.fe-height-val {
+  min-width: 38px !important;
+  white-space: nowrap;
+}
+
+.renton-hotlist-btn {
+  margin-left: 4px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  border: 1px solid rgba(190, 18, 60, 0.3);
+  background: rgba(190, 18, 60, 0.06);
+  color: #be123c;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.renton-hotlist-btn.active {
+  background: #be123c;
+  color: #fff;
+  border-color: #be123c;
+}
+
+
 
 
 

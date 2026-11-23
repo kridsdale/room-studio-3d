@@ -84,6 +84,7 @@ const state = {
   fisheyeMode: 'equidistant', // 'equidistant' | 'panini' | 'stereographic' | 'rectilinear'
   fisheyeFovDeg: 138,         // 90° .. 165° horizontal FOV for Eye-Level curvilinear shader
   eyeVantage: 'doorway',      // 'doorway' | 'nw' | 'ne' | 'se' | 'center'
+  eyeHeightIn: 61,            // 24" .. 86" first-person eye elevation (default 5' 1" standing)
   lightingMood: 'day', // 'day' | 'evening'
   units: 'imperial',   // 'imperial' | 'metric'
   gridSnapIn: 1,
@@ -96,6 +97,8 @@ const state = {
   activeCategory: 'all',
   searchQuery: '',
   retainedDeskId: 'retained_wood_desk',
+  hotlistIds: [],             // "Considering" pre-cart shortlist of catalogIds
+  hotlistOnly: false,         // When true, both Optimizer & AI Planner only use hotlistIds
   measureMode: false,
   measureActive: false, // true while aiming from Point A -> Point B
   measureStart: null,   // THREE.Vector3
@@ -421,6 +424,7 @@ function syncItemMesh(item, animatePop = false) {
     frontFinish: item.frontFinish || null,
     hardware: item.hardware || 'auto',
     doorsOpen: !!item.doorsOpen,
+    mountHeightIn: item.mountHeightIn ?? cat.mountHeightIn ?? null,
   });
   mesh.traverse((c) => {
     c.userData.uid = item.uid;
@@ -476,6 +480,7 @@ function loadItemsList(rawItems, saveUndo = false) {
       ...(it.frontFinish ? { frontFinish: it.frontFinish } : {}),
       ...(it.hardware ? { hardware: it.hardware } : {}),
       ...(it.doorsOpen ? { doorsOpen: true } : {}),
+      ...(cat?.wallMounted ? { mountHeightIn: it.mountHeightIn ?? cat.mountHeightIn ?? 54 } : {}),
     };
   });
 
@@ -846,6 +851,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
       finish: state.placingFinish,
       expanded: false,
       ...(placeCat?.defaultFrontStyle ? { frontStyle: placeCat.defaultFrontStyle } : {}),
+      ...(placeCat?.wallMounted ? { mountHeightIn: placeCat.mountHeightIn || 54 } : {}),
     };
     state.items.push(newItem);
     syncItemMesh(newItem, true);
@@ -1051,10 +1057,32 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  // Vertical Adjustment Key Chords: Alt + ↑/↓ or PageUp/PageDown (Shift = 1" fine step, default = 3")
+  // Applies to selected wall-mounted shelf first; otherwise adjusts 1st-Person Eye camera elevation!
+  const isVertUp = (e.altKey && e.key === 'ArrowUp') || e.key === 'PageUp' || (state.viewMode === 'fp' && !state.selectedUid && key === 'e');
+  const isVertDown = (e.altKey && e.key === 'ArrowDown') || e.key === 'PageDown' || (state.viewMode === 'fp' && !state.selectedUid && key === 'q');
+  if (isVertUp || isVertDown) {
+    const stepIn = e.shiftKey ? 1 : 3;
+    const deltaIn = isVertUp ? stepIn : -stepIn;
+    const selItem = state.selectedUid ? state.items.find((i) => i.uid === state.selectedUid) : null;
+    const selCat = selItem ? ALL_CATALOG[selItem.catalogId] : null;
+    if (selItem && selCat?.wallMounted) {
+      e.preventDefault();
+      adjustSelectedMountHeight(deltaIn);
+      return;
+    }
+    if (state.viewMode === 'fp') {
+      e.preventDefault();
+      setEyeHeightIn(state.eyeHeightIn + deltaIn, true);
+      return;
+    }
+  }
+
   // Cartesian Arrow-Key Nudging (25 cm default, 5 cm with Shift!)
   if (
     state.selectedUid &&
     !state.placingCatalogId &&
+    !e.altKey &&
     (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')
   ) {
     e.preventDefault();
@@ -1068,7 +1096,7 @@ window.addEventListener('keydown', (e) => {
   }
 
   // Eye Level WASD / Arrow walking when no furniture is selected
-  if (state.viewMode === 'fp' && !state.selectedUid) {
+  if (state.viewMode === 'fp' && !state.selectedUid && !e.altKey) {
     const stepM = 0.25;
     const fwd = new THREE.Vector3();
     camera.getWorldDirection(fwd);
@@ -1195,6 +1223,7 @@ function duplicateSelected() {
     ...(item.frontFinish ? { frontFinish: item.frontFinish } : {}),
     ...(item.hardware ? { hardware: item.hardware } : {}),
     ...(item.doorsOpen ? { doorsOpen: true } : {}),
+    ...(Number.isFinite(Number(item.mountHeightIn)) ? { mountHeightIn: item.mountHeightIn } : {}),
   };
   state.items.push(copy);
   syncItemMesh(copy, true);
@@ -1203,6 +1232,31 @@ function duplicateSelected() {
   updateInspector();
   updateCartBadge();
   saveToStorage();
+}
+
+function setSelectedMountHeight(targetIn, saveUndo = true) {
+  const item = state.items.find((i) => i.uid === state.selectedUid);
+  if (!item) return;
+  const cat = ALL_CATALOG[item.catalogId];
+  if (!cat || !cat.wallMounted) return;
+  const maxH = Math.max(24, Math.floor((state.room.heightIn || 96) - (cat.h || 14) - 1));
+  const clamped = Math.max(18, Math.min(maxH, Math.round(Number(targetIn) || (cat.mountHeightIn || 54))));
+  if (item.mountHeightIn === clamped) return;
+  if (saveUndo) pushUndoSnapshot();
+  item.mountHeightIn = clamped;
+  syncItemMesh(item, false);
+  revalidateAllItems();
+  updateInspector();
+  saveToStorage();
+}
+
+function adjustSelectedMountHeight(deltaIn) {
+  const item = state.items.find((i) => i.uid === state.selectedUid);
+  if (!item) return;
+  const cat = ALL_CATALOG[item.catalogId];
+  if (!cat || !cat.wallMounted) return;
+  const cur = item.mountHeightIn ?? cat.mountHeightIn ?? 54;
+  setSelectedMountHeight(cur + deltaIn, true);
 }
 
 function restoreRetainedItem(catalogId) {
@@ -1267,36 +1321,64 @@ function swapRetainedDesk(targetDeskId) {
 // ======================== CAMERA PRESETS ========================
 let cameraLerp = null;
 
+function setEyeHeightIn(inches, persist = false) {
+  const maxEye = Math.max(72, Math.round((state.room.heightIn || 96) - 10));
+  const clamped = Math.max(24, Math.min(maxEye, Math.round(Number(inches) || 61)));
+  state.eyeHeightIn = clamped;
+  const nextM = clamped * IN_TO_M;
+
+  const slider = document.getElementById('eye-height-slider');
+  const valEl = document.getElementById('eye-height-val');
+  if (slider) {
+    slider.max = String(maxEye);
+    slider.value = String(clamped);
+  }
+  if (valEl) valEl.textContent = formatLen(clamped);
+  document.getElementById('eye-sit-btn')?.classList.toggle('active', Math.abs(clamped - 44) <= 1);
+  document.getElementById('eye-stand-btn')?.classList.toggle('active', Math.abs(clamped - 61) <= 1);
+
+  if (state.viewMode === 'fp') {
+    const dy = nextM - camera.position.y;
+    cameraLerp = null;
+    camera.position.y = nextM;
+    controls.target.y += dy;
+    controls.update();
+    invalidateFisheye();
+  }
+  if (persist) saveToStorage();
+}
+
 function getEyeVantagePose(vantageId) {
   const W = state.room.widthIn * IN_TO_M;
   const L = state.room.lengthIn * IN_TO_M;
   const flareW = (state.room.swFlareWidthIn || 0) * IN_TO_M;
-  const eyeY = 1.54; // ~5' 0.6" natural interior eye height
+  const eyeY = (state.eyeHeightIn || 61) * IN_TO_M;
+  const lookY = Math.max(0.45, eyeY - 0.18);
   let pos;
   let lookAt;
 
   switch (vantageId) {
     case 'nw':
       pos = new THREE.Vector3(-W * 0.5 + 0.44, eyeY, -L * 0.5 + 0.46);
-      lookAt = new THREE.Vector3(0.16, 1.32, L * 0.24);
+      lookAt = new THREE.Vector3(0.16, lookY, L * 0.24);
       break;
     case 'ne':
       pos = new THREE.Vector3(W * 0.5 - 0.44, eyeY, -L * 0.5 + 0.46);
-      lookAt = new THREE.Vector3(-0.22, 1.32, L * 0.26);
+      lookAt = new THREE.Vector3(-0.22, lookY, L * 0.26);
       break;
     case 'se':
       pos = new THREE.Vector3(W * 0.5 - 0.42, eyeY, L * 0.5 - 0.52);
-      lookAt = new THREE.Vector3(-0.18, 1.34, -L * 0.22);
+      lookAt = new THREE.Vector3(-0.18, lookY, -L * 0.22);
       break;
     case 'center':
       pos = new THREE.Vector3(0.0, eyeY, 0.24);
-      lookAt = new THREE.Vector3(0.0, 1.38, -L * 0.36);
+      lookAt = new THREE.Vector3(0.0, lookY + 0.04, -L * 0.36);
       break;
     case 'doorway':
     default:
       // Just inside the angled SW entry doorway looking NE across the entire 5-sided room
       pos = new THREE.Vector3(-W * 0.5 - flareW * 0.32 + 0.44, eyeY, L * 0.5 - 0.48);
-      lookAt = new THREE.Vector3(0.14, 1.36, -L * 0.22);
+      lookAt = new THREE.Vector3(0.14, lookY + 0.02, -L * 0.22);
       break;
   }
 
@@ -1753,6 +1835,21 @@ function updateInspector() {
   const skuTag = cat.skuFormatted ? ` · #${cat.skuFormatted}` : '';
   document.getElementById('insp-sub').textContent = `${cleanSubtitle(cat.subtitle)}${skuTag}`;
 
+  const inspHotBtn = document.getElementById('insp-hotlist-btn');
+  if (inspHotBtn) {
+    if (cat.retained) {
+      inspHotBtn.style.display = 'none';
+    } else {
+      inspHotBtn.style.display = 'inline-flex';
+      const inHot = state.hotlistIds.includes(cat.id);
+      inspHotBtn.textContent = inHot ? '♥' : '♡';
+      inspHotBtn.classList.toggle('active', inHot);
+      inspHotBtn.title = inHot ? 'Remove from ♥ Considering hotlist' : 'Add to ♥ Considering hotlist';
+      inspHotBtn.onclick = () => toggleHotlistItem(cat.id);
+    }
+  }
+
+  const effectiveMountH = item.mountHeightIn ?? cat.mountHeightIn ?? 54;
   const statusEl = document.getElementById('insp-status');
   if (status.colliding) {
     statusEl.className = 'status-banner error';
@@ -1765,7 +1862,7 @@ function updateInspector() {
     statusEl.textContent = `✓ Stacked cleanly on ${status.supportedBy}`;
   } else if (cat.wallMounted) {
     statusEl.className = 'status-banner ok';
-    statusEl.textContent = `✓ Wall-mounted at ${formatLen(cat.mountHeightIn || 54)} (0 floor footprint)`;
+    statusEl.textContent = `✓ Wall-mounted at ${formatLen(effectiveMountH)} (Alt+↑↓ to adjust)`;
   } else {
     statusEl.className = 'status-banner ok';
     statusEl.textContent = '✓ Fits cleanly with full clearance';
@@ -1774,6 +1871,29 @@ function updateInspector() {
   document.getElementById('insp-w').textContent = formatLen(dims.w);
   document.getElementById('insp-d').textContent = formatLen(dims.d);
   document.getElementById('insp-h').textContent = formatLen(dims.h);
+
+  const mountWrap = document.getElementById('insp-mount-wrap');
+  if (mountWrap) {
+    if (cat.wallMounted) {
+      mountWrap.style.display = 'block';
+      const maxH = Math.max(24, Math.floor((state.room.heightIn || 96) - (cat.h || 14) - 1));
+      const mVal = document.getElementById('insp-mount-val');
+      const mSlider = document.getElementById('insp-mount-slider');
+      if (mVal) mVal.textContent = formatLen(effectiveMountH);
+      if (mSlider) {
+        mSlider.max = String(maxH);
+        mSlider.value = String(Math.max(18, Math.min(maxH, Math.round(effectiveMountH))));
+        mSlider.oninput = () => setSelectedMountHeight(Number(mSlider.value), false);
+        mSlider.onchange = () => setSelectedMountHeight(Number(mSlider.value), true);
+      }
+      const downBtn = document.getElementById('mount-down-btn');
+      const upBtn = document.getElementById('mount-up-btn');
+      if (downBtn) downBtn.onclick = () => adjustSelectedMountHeight(-3);
+      if (upBtn) upBtn.onclick = () => adjustSelectedMountHeight(3);
+    } else {
+      mountWrap.style.display = 'none';
+    }
+  }
 
   const angle = normDeg(item.rotDeg);
   document.getElementById('insp-angle-val').textContent = `${angle}°`;
@@ -1955,13 +2075,117 @@ function getStockBadgeHTML(stock) {
   return '';
 }
 
+function toggleHotlistItem(catalogId) {
+  if (!catalogId || !ALL_CATALOG[catalogId]) return;
+  const idx = state.hotlistIds.indexOf(catalogId);
+  if (idx >= 0) {
+    state.hotlistIds.splice(idx, 1);
+  } else {
+    state.hotlistIds.push(catalogId);
+  }
+  updateHotlistUI();
+  renderCatalogCards();
+  updateInspector();
+  saveToStorage();
+}
+
+function setHotlistOnly(enabled, persist = true) {
+  state.hotlistOnly = !!enabled;
+  updateHotlistUI();
+  if (persist) saveToStorage();
+}
+
+function updateHotlistUI() {
+  state.hotlistIds = Array.from(new Set((state.hotlistIds || []).filter((id) => ALL_CATALOG[id])));
+  const count = state.hotlistIds.length;
+  const activeOnly = !!state.hotlistOnly;
+
+  // 1. Left Rail Considering Card
+  const titleEl = document.getElementById('hotlist-count-title');
+  if (titleEl) titleEl.textContent = `♥ Considering (${count})`;
+  const clearBtn = document.getElementById('hotlist-clear-btn');
+  if (clearBtn) clearBtn.style.display = count > 0 ? 'inline-block' : 'none';
+  const railChk = document.getElementById('chk-hotlist-only');
+  if (railChk) railChk.checked = activeOnly;
+
+  const chipsEl = document.getElementById('hotlist-chips');
+  if (chipsEl) {
+    chipsEl.innerHTML = '';
+    if (count === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'hotlist-empty';
+      empty.innerHTML = `Tap <strong>♡</strong> on catalog cards to shortlist items for the optimizers.`;
+      const quickBtn = document.createElement('button');
+      quickBtn.className = 'mini-btn hotlist-quick-btn';
+      quickBtn.textContent = '+ Load Renton Cabinet Picks';
+      quickBtn.title = 'Add TONSTAD Double Hutch, TONSTAD Sliding Glass 47½", IDANÄS High Cabinet, KALLAX 4×4 & MARKUS to Considering';
+      quickBtn.onclick = () => {
+        const starter = ['tonstad_double_hutch', 'tonstad_sliding_glass_wide', 'idanas_high_cabinet', 'kallax_4x4', 'markus_chair'];
+        for (const id of starter) {
+          if (ALL_CATALOG[id] && !state.hotlistIds.includes(id)) state.hotlistIds.push(id);
+        }
+        state.hotlistOnly = true;
+        updateHotlistUI();
+        renderCatalogCards();
+        saveToStorage();
+      };
+      chipsEl.appendChild(empty);
+      chipsEl.appendChild(quickBtn);
+    } else {
+      for (const id of state.hotlistIds) {
+        const c = ALL_CATALOG[id];
+        if (!c) continue;
+        const chip = document.createElement('span');
+        chip.className = 'hotlist-chip';
+        chip.title = `${c.name} ($${c.price}) — Click × to remove`;
+        const lbl = document.createElement('span');
+        lbl.textContent = c.name;
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.textContent = '×';
+        rm.setAttribute('aria-label', `Remove ${c.name} from Considering`);
+        rm.onclick = () => toggleHotlistItem(id);
+        chip.appendChild(lbl);
+        chip.appendChild(rm);
+        chipsEl.appendChild(chip);
+      }
+    }
+  }
+
+  // 2. Buy Mode Category Tab label ("♥ Considering (N)")
+  const consTab = document.querySelector('.cat-tab[data-cat="considering"]');
+  if (consTab) {
+    consTab.textContent = count > 0 ? `♥ Considering (${count})` : '♥ Considering';
+  }
+
+  // 3. Optimizer Floating Bar pill
+  const optBtn = document.getElementById('opt-hotlist-btn');
+  if (optBtn) {
+    optBtn.textContent = `♥ Hotlist Only (${count})`;
+    optBtn.classList.toggle('active', activeOnly);
+  }
+
+  // 4. AI Planner Drawer toggle bar
+  const agentChk = document.getElementById('agent-hotlist-chk');
+  if (agentChk) agentChk.checked = activeOnly;
+  const agentTxt = document.getElementById('agent-hotlist-text');
+  if (agentTxt) {
+    agentTxt.textContent = `♥ Considering Hotlist Only (${count} ${count === 1 ? 'item' : 'items'})`;
+  }
+}
+
 function renderCatalogCards() {
   const strip = document.getElementById('catalog-strip');
   const q = state.searchQuery.trim().toLowerCase();
+  const hotSet = new Set(state.hotlistIds || []);
   const filtered = IKEA_CATALOG.filter((item) => {
     const matchCat =
       state.activeCategory === 'all' ||
-      (state.activeCategory === 'renton_picks' ? !!item.rentonPick : item.category === state.activeCategory);
+      (state.activeCategory === 'renton_picks'
+        ? !!item.rentonPick
+        : state.activeCategory === 'considering'
+          ? hotSet.has(item.id)
+          : item.category === state.activeCategory);
     const matchQ =
       !q ||
       item.name.toLowerCase().includes(q) ||
@@ -1975,6 +2199,17 @@ function renderCatalogCards() {
   if (filtered.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty-search';
+    if (state.activeCategory === 'considering' && !q) {
+      empty.innerHTML = `
+        <span>Your <strong>♥ Considering</strong> hotlist is empty — click <strong>♡</strong> on any catalog card to shortlist it!</span>
+        <button id="empty-go-renton-btn" class="renton-lookup-btn">Browse ★ Renton Picks →</button>
+      `;
+      strip.appendChild(empty);
+      document.getElementById('empty-go-renton-btn').onclick = () => {
+        document.querySelector('.cat-tab[data-cat="renton_picks"]')?.click();
+      };
+      return;
+    }
     empty.innerHTML = `
       <span>No local match for "<strong>${state.searchQuery}</strong>"</span>
       <button id="lookup-live-empty-btn" class="renton-lookup-btn">Lookup Live Renton #488 →</button>
@@ -1997,11 +2232,16 @@ function renderCatalogCards() {
     const isFree = item.retained || item.brand === 'Move-In';
     const priceLabel = item.retained ? 'Kept' : item.brand === 'Move-In' ? 'Move-In' : `$${item.price}`;
     const stockBadge = getStockBadgeHTML(item.rentonStock);
+    const isHot = hotSet.has(item.id);
+    const hotBtnHtml = item.retained
+      ? ''
+      : `<button type="button" class="card-hotlist-btn ${isHot ? 'active' : ''}" title="${isHot ? 'Remove from ♥ Considering hotlist' : 'Add to ♥ Considering hotlist'}" aria-label="${isHot ? 'Remove from Considering' : 'Add to Considering'}">${isHot ? '♥' : '♡'}</button>`;
     card.innerHTML = `
       <div class="card-photo-wrap">
         <img class="card-photo" src="${photoSrc}" alt="${item.name}" loading="lazy" />
         ${stockBadge}
         <span class="card-price-pill ${isFree ? 'free' : ''}">${priceLabel}</span>
+        ${hotBtnHtml}
       </div>
       <div class="card-body">
         <div class="card-name">${item.name}</div>
@@ -2009,6 +2249,13 @@ function renderCatalogCards() {
         <div class="card-dims">${formatDimsShort(item.w, item.d, item.h)}</div>
       </div>
     `;
+    const hotBtn = card.querySelector('.card-hotlist-btn');
+    if (hotBtn) {
+      hotBtn.onclick = (e) => {
+        e.stopPropagation();
+        toggleHotlistItem(item.id);
+      };
+    }
     const skuNote = item.skuFormatted ? ` (#${item.skuFormatted})` : '';
     card.title = `${item.name}${skuNote} — ${item.description || item.subtitle || 'IKEA Renton #488'} — Click to place in 3D`;
     card.onclick = () => {
@@ -2252,7 +2499,7 @@ function syncPresetSelectors(val) {
   if (s2) s2.value = val;
 }
 
-function runOptimizedSuggestion(goalOverride = null, saveUndo = true) {
+function runOptimizedSuggestion(goalOverride = null, saveUndo = true, forceHotlist = false) {
   if (goalOverride) {
     state.optimizerGoal = goalOverride;
     const sel = document.getElementById('opt-goal-select');
@@ -2260,11 +2507,13 @@ function runOptimizedSuggestion(goalOverride = null, saveUndo = true) {
   }
   clearGhost();
   stopMeasureMode();
+  const useHotlist = (forceHotlist || state.hotlistOnly) && Array.isArray(state.hotlistIds) && state.hotlistIds.length > 0;
   const plan = generateOptimizedLayout(
     state.room,
     state.retainedDeskId,
     state.optimizerGoal,
-    state.lastArchetypeId
+    state.lastArchetypeId,
+    { hotlistIds: state.hotlistIds, hotlistOnly: useHotlist }
   );
   state.lastArchetypeId = plan.archetypeId;
 
@@ -2278,8 +2527,11 @@ function runOptimizedSuggestion(goalOverride = null, saveUndo = true) {
   }
 
   document.getElementById('opt-title').textContent = plan.title;
-  document.getElementById('opt-meta').textContent = `${plan.paletteName} · ${plan.ikeaCount} IKEA · $${plan.ikeaCost.toLocaleString()} · Zero Collisions ✓`;
+  document.getElementById('opt-meta').textContent = plan.hotlistOnly
+    ? `♥ Hotlist-Only · ${plan.ikeaCount} IKEA · $${plan.ikeaCost.toLocaleString()} · Zero Collisions ✓`
+    : `${plan.paletteName} · ${plan.ikeaCount} IKEA · $${plan.ikeaCost.toLocaleString()} · Zero Collisions ✓`;
   document.getElementById('optimizer-bar').classList.remove('hidden');
+  updateHotlistUI();
   return plan;
 }
 
@@ -2443,11 +2695,17 @@ function applyFullConfiguration(config, saveUndo = true, opts = {}) {
     }
   }
 
-  // 1. Room geometry & retained desk choice
+  // 1. Room geometry, retained desk choice & Considering hotlist
   state.room = migrateLegacyUncalibratedRoom(config.room);
   state.retainedDeskId = config.retainedDeskId || 'retained_wood_desk';
+  if (Array.isArray(config.hotlistIds)) {
+    state.hotlistIds = Array.from(new Set(config.hotlistIds.filter((id) => ALL_CATALOG[id])));
+  }
+  if (typeof config.hotlistOnly === 'boolean') {
+    state.hotlistOnly = config.hotlistOnly;
+  }
 
-  // 2. Settings (units, lighting, wall mode, fisheye lens, overlays, budget cap)
+  // 2. Settings (units, lighting, wall mode, fisheye lens, eye height, overlays, budget cap)
   const s = config.settings || {};
   state.units = s.units === 'metric' ? 'metric' : 'imperial';
   const unitLabel = state.units === 'imperial' ? 'ft / in' : 'm / cm';
@@ -2480,6 +2738,7 @@ function applyFullConfiguration(config, saveUndo = true, opts = {}) {
   }
   if (s.fisheyeMode) setFisheyeMode(s.fisheyeMode);
   if (Number.isFinite(Number(s.fisheyeFovDeg))) setFisheyeFovDeg(s.fisheyeFovDeg);
+  if (Number.isFinite(Number(s.eyeHeightIn))) setEyeHeightIn(s.eyeHeightIn, false);
   if (s.eyeVantage) {
     state.eyeVantage = s.eyeVantage;
     document.querySelectorAll('[data-vantage]').forEach((b) => {
@@ -2496,6 +2755,7 @@ function applyFullConfiguration(config, saveUndo = true, opts = {}) {
   rebuildRoomArchitecture();
   applyLightingMood();
   loadItemsList(config.items || [], saveUndo);
+  updateHotlistUI();
   renderCatalogCards();
   updateBudgetBar();
   activeConfigName = config.name || 'Loaded Configuration';
@@ -2540,6 +2800,7 @@ function toggleUnits() {
   renderCatalogCards();
   rebuildSelectionGuides();
   updateInspector();
+  setEyeHeightIn(state.eyeHeightIn, false);
   if (!document.getElementById('calib-modal').classList.contains('hidden')) {
     populateCalibrationModal();
   }
@@ -2570,7 +2831,8 @@ function initUI() {
   const catTabs = document.getElementById('cat-tabs');
   for (const c of CATEGORIES) {
     const btn = document.createElement('button');
-    btn.className = `cat-tab ${c.id === 'all' ? 'active' : ''} ${c.id === 'renton_picks' ? 'renton-pick-tab' : ''}`.trim();
+    btn.dataset.cat = c.id;
+    btn.className = `cat-tab ${c.id === 'all' ? 'active' : ''} ${c.id === 'renton_picks' ? 'renton-pick-tab' : ''} ${c.id === 'considering' ? 'considering-tab' : ''}`.trim();
     btn.textContent = c.label;
     btn.onclick = () => {
       state.activeCategory = c.id;
@@ -2581,7 +2843,42 @@ function initUI() {
     };
     catTabs.appendChild(btn);
   }
+  updateHotlistUI();
   renderCatalogCards();
+
+  // Considering Hotlist synced controls (Left Rail + Optimizer Bar + AI Planner)
+  document.getElementById('chk-hotlist-only')?.addEventListener('change', (e) => {
+    setHotlistOnly(e.target.checked, true);
+  });
+  document.getElementById('hotlist-clear-btn')?.addEventListener('click', () => {
+    state.hotlistIds = [];
+    updateHotlistUI();
+    renderCatalogCards();
+    updateInspector();
+    saveToStorage();
+  });
+  document.getElementById('opt-hotlist-btn')?.addEventListener('click', () => {
+    setHotlistOnly(!state.hotlistOnly, true);
+    if (state.hotlistOnly && state.hotlistIds.length > 0) {
+      runOptimizedSuggestion(null, true);
+    }
+  });
+  document.getElementById('agent-hotlist-chk')?.addEventListener('change', (e) => {
+    setHotlistOnly(e.target.checked, true);
+  });
+  document.getElementById('agent-view-hotlist-btn')?.addEventListener('click', () => {
+    document.querySelector('.cat-tab[data-cat="considering"]')?.click();
+  });
+
+  // 1st-Person Eye-Level Camera Vertical Height controls
+  const eyeSlider = document.getElementById('eye-height-slider');
+  if (eyeSlider) {
+    eyeSlider.addEventListener('input', (e) => setEyeHeightIn(Number(e.target.value), false));
+    eyeSlider.addEventListener('change', (e) => setEyeHeightIn(Number(e.target.value), true));
+  }
+  document.getElementById('eye-sit-btn')?.addEventListener('click', () => setEyeHeightIn(44, true));
+  document.getElementById('eye-stand-btn')?.addEventListener('click', () => setEyeHeightIn(61, true));
+  setEyeHeightIn(state.eyeHeightIn, false);
 
   const searchInput = document.getElementById('catalog-search');
   searchInput.addEventListener('focus', expandBuyDock);
@@ -3799,6 +4096,7 @@ async function runLiveRentonQuery(rawQuery) {
       const skuText = item.skuFormatted ? ` · #${item.skuFormatted}` : '';
       const dimsText = formatDimsShort(item.w, item.d, item.h);
 
+      const inHot = state.hotlistIds.includes(item.id);
       card.innerHTML = `
         <div class="renton-card-img-wrap">
           ${imgHtml}
@@ -3810,6 +4108,7 @@ async function runLiveRentonQuery(rawQuery) {
         <div class="renton-card-dims">${escapeRentonHtml(dimsText)}${item.wallMounted ? ' · Wall-mounted' : ''}</div>
         <div class="renton-card-foot">
           <button type="button" class="renton-place-btn">+ Place in 3D</button>
+          <button type="button" class="renton-hotlist-btn ${inHot ? 'active' : ''}" title="${inHot ? 'Remove from ♥ Considering' : 'Add to ♥ Considering hotlist'}">${inHot ? '♥' : '♡'}</button>
           ${item.pipUrl ? `<a class="renton-pip-link" href="${escapeRentonHtml(item.pipUrl)}" target="_blank" rel="noopener">IKEA ↗</a>` : ''}
         </div>
       `;
@@ -3821,6 +4120,18 @@ async function runLiveRentonQuery(rawQuery) {
         document.getElementById('renton-modal')?.classList.add('hidden');
         startPlacing(reg.id);
       };
+
+      const hotBtn = card.querySelector('.renton-hotlist-btn');
+      if (hotBtn) {
+        hotBtn.onclick = () => {
+          const reg = registerDynamicCatalogItem(item);
+          if (!reg) return;
+          toggleHotlistItem(reg.id);
+          const nowIn = state.hotlistIds.includes(reg.id);
+          hotBtn.textContent = nowIn ? '♥' : '♡';
+          hotBtn.classList.toggle('active', nowIn);
+        };
+      }
 
       gridEl.appendChild(card);
     }

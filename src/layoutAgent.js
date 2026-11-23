@@ -14,12 +14,12 @@ import {
 } from './collision.js';
 
 export const AGENT_QUICK_PROMPTS = [
+  'Arrange only my Considering hotlist cleanly',
   'Dual office: both desks on West wall + loveseat on East',
   'Dual office face-off (East + West) with 42" monitor desk',
   'Dual office L-corner studio near the North window',
-  'Move 42" monitor desk to West wall facing East & pair chairs',
-  'Add a BILLY bookcase on West wall, HEKTAR lamp & STOENSE rug',
-  'Switch finishes to walnut & dark grey, evening lighting',
+  'Add TONSTAD Double Hutch on West wall & IDANÄS on East',
+  'Switch finishes to oak & off-white, evening lighting',
   'Audit clearances, chair aisle & IKEA budget',
 ];
 
@@ -27,6 +27,11 @@ const FINISH_ALIASES = [
   ['blackbrown', 'blackBrown'],
   ['black-brown', 'blackBrown'],
   ['espresso', 'blackBrown'],
+  ['stained oak', 'stainedOak'],
+  ['brown oak', 'stainedOak'],
+  ['off-white', 'offWhite'],
+  ['off white', 'offWhite'],
+  ['dark blue', 'darkBlue'],
   ['matte black', 'matteBlack'],
   ['black', 'matteBlack'],
   ['walnut', 'walnut'],
@@ -60,6 +65,18 @@ const CATALOG_SYNONYMS = [
   ['retained_wood_desk', ['wood desk', 'standing desk', 'bamboo desk', 'retained desk', 'wood standing', 'first desk', '1st desk', 'original desk']],
   ['retained_white_desk', ['white desk', 'corner desk', 'white corner']],
   ['retained_loveseat', ['loveseat', 'love seat', 'big loveseat', 'chair and a half', 'couch', 'retained sofa', 'existing sofa', 'blue chair', 'armchair']],
+  ['tonstad_double_hutch', ['tonstad double hutch', 'tonstad 64 hutch', 'tonstad hutch 64', 'tonstad $838']],
+  ['tonstad_hutch_combo', ['tonstad tall hutch', 'tonstad hutch', 'tonstad 32 hutch']],
+  ['tonstad_sliding_glass_wide', ['tonstad sliding glass 47', 'tonstad wide glass', 'tonstad 47', 'tonstad glass']],
+  ['tonstad_sliding_glass_narrow', ['tonstad sliding glass 32', 'tonstad narrow glass']],
+  ['tonstad_sliding_solid', ['tonstad sliding door', 'tonstad solid sliding']],
+  ['tonstad_bookcase', ['tonstad bookcase', 'tonstad shelf', 'tonstad']],
+  ['tonstad_double_credenza', ['tonstad double cabinet', 'tonstad credenza', 'tonstad 64']],
+  ['tonstad_base_doors', ['tonstad base', 'tonstad cabinet']],
+  ['tonstad_4drawer', ['tonstad 4-drawer', 'tonstad dresser', 'tonstad drawers']],
+  ['idanas_high_cabinet', ['idanas', 'idanäs', 'high cabinet', 'glass display cabinet']],
+  ['kallax_5x5', ['kallax 5x5', 'kallax 5×5', '25 cube', '25-cubby']],
+  ['kallax_2x4', ['kallax 2x4', 'kallax 2×4', 'kallax tower']],
   ['jarvfjallet_chair', ['jarvfjallet', 'järvfjället', 'headrest chair', 'ergonomic chair']],
   ['markus_chair', ['markus', 'office chair', 'desk chair', 'swivel chair', 'mesh chair', 'chair']],
   ['brimnes_daybed', ['brimnes', 'brimnes daybed']],
@@ -405,8 +422,17 @@ function parseClause(clause, state) {
     return [{ tool: 'set_walls', args: { mode: 'cutaway' } }];
   }
 
-  // 4. Dual-Office & Room Preset / Optimizer triggers
+  // 4. Considering Hotlist / Dual-Office & Room Preset / Optimizer triggers
+  const hasHotlist = Array.isArray(state.hotlistIds) && state.hotlistIds.length > 0;
+  if (/(hotlist|considering|shortlist|pre[\s-]?cart|my\s+picks|my\s+list)/.test(low)) {
+    let goal = /dual|two|2\s*desk/.test(low) ? 'dual_office' : 'any';
+    return [{ tool: 'run_optimizer', args: { goal, forceHotlist: true } }];
+  }
+
   if (/(dual|two|2)\s*(home\s*)?(office|desk|workstation|setup)|both desks/.test(low)) {
+    if (state.hotlistOnly && hasHotlist) {
+      return [{ tool: 'run_optimizer', args: { goal: 'dual_office', forceHotlist: true } }];
+    }
     if (/tandem|side[\s-]by[\s-]side|both desks.*west|along.*west/.test(low)) {
       return [{ tool: 'load_preset', args: { presetKey: 'dual_tandem_west' } }];
     }
@@ -428,7 +454,7 @@ function parseClause(clause, state) {
     return [{ tool: 'load_preset', args: { presetKey: 'dual_parallel' } }];
   }
 
-  if (/(shuffle|optimize|suggest|recommend|auto[\s-]?layout|surprise me)/.test(low)) {
+  if (/(shuffle|optimize|suggest|recommend|auto[\s-]?layout|surprise me|arrange)/.test(low)) {
     let goal = 'dual_office';
     if (/guest|bed|daybed/.test(low)) goal = 'guest';
     else if (/library|book|reading/.test(low)) goal = 'library';
@@ -701,30 +727,53 @@ export function executeToolCalls(toolCalls, ctx) {
         trace.push({ tool, summary: `Unknown preset: ${args.presetKey}`, ok: false });
         continue;
       }
-      // Respect user's currently chosen retained desk variant (wood vs white)
-      const itemsCopy = preset.items.map((it) => {
-        if (it.catalogId === 'retained_wood_desk' && state.retainedDeskId === 'retained_white_desk') {
-          return { ...it, catalogId: 'retained_white_desk', finish: 'white' };
-        }
-        return { ...it };
-      });
+      const hotSet =
+        state.hotlistOnly && Array.isArray(state.hotlistIds) && state.hotlistIds.length > 0 && args.presetKey !== 'retained_only'
+          ? new Set(state.hotlistIds)
+          : null;
+      // Respect user's currently chosen retained desk variant (wood vs white) & Hotlist-Only constraint
+      const itemsCopy = preset.items
+        .map((it) => {
+          if (it.catalogId === 'retained_wood_desk' && state.retainedDeskId === 'retained_white_desk') {
+            return { ...it, catalogId: 'retained_white_desk', finish: 'white' };
+          }
+          return { ...it };
+        })
+        .filter((it) => {
+          if (!hotSet) return true;
+          const c = ALL_CATALOG[it.catalogId];
+          return !c || c.retained || c.brand === 'Move-In' || hotSet.has(it.catalogId);
+        });
       api.loadItemsList(itemsCopy, false);
       api.syncPresetSelectors(args.presetKey);
       const optBar = document.getElementById('optimizer-bar');
       if (optBar) optBar.classList.add('hidden');
-      trace.push({ tool, summary: `Loaded "${preset.label}" (${itemsCopy.length} items)`, ok: true });
+      trace.push({
+        tool,
+        summary: `Loaded "${preset.label}" (${itemsCopy.length} items${hotSet ? ' · Hotlist filtered' : ''})`,
+        ok: true,
+      });
       summaryNotes.push(preset.description);
       continue;
     }
 
     if (tool === 'run_optimizer') {
-      const plan = api.runOptimizedSuggestion(args.goal || 'dual_office', false);
+      if (args.forceHotlist && (!state.hotlistIds || state.hotlistIds.length === 0)) {
+        trace.push({ tool, summary: 'Considering Hotlist is empty — star items in Buy Mode first', ok: false });
+        summaryNotes.push('Tap the ♥ button on any IKEA catalog cards to build your Considering list first.');
+        continue;
+      }
+      const plan = api.runOptimizedSuggestion(args.goal || 'dual_office', false, !!args.forceHotlist);
       trace.push({
         tool,
         summary: `Generated "${plan.title}" · ${plan.ikeaCount} IKEA ($${plan.ikeaCost})`,
         ok: true,
       });
-      summaryNotes.push(`Palette: ${plan.paletteName}, zero collisions.`);
+      summaryNotes.push(
+        plan.hotlistOnly
+          ? `Hotlist-Only mode: placed ${plan.hotlistPlaced}/${plan.hotlistTotal} Considering items with zero collisions.`
+          : `Palette: ${plan.paletteName}, zero collisions.`
+      );
       continue;
     }
 
@@ -750,6 +799,21 @@ export function executeToolCalls(toolCalls, ctx) {
         trace.push({ tool, summary: `Catalog item not found: ${args.catalogId}`, ok: false });
         continue;
       }
+      const hotlistGuard =
+        state.hotlistOnly &&
+        Array.isArray(state.hotlistIds) &&
+        state.hotlistIds.length > 0 &&
+        !cat.retained &&
+        cat.brand !== 'Move-In' &&
+        !state.hotlistIds.includes(cat.id);
+      if (hotlistGuard) {
+        trace.push({
+          tool,
+          summary: `Blocked "${cat.name}" — not in Considering Hotlist (Hotlist-Only mode is ON)`,
+          ok: false,
+        });
+        continue;
+      }
       const count = Math.min(3, Math.max(1, parseInt(args.count, 10) || 1));
       for (let k = 0; k < count; k++) {
         const nearItem = args.nearTarget ? resolvePlacedTarget(args.nearTarget, state.items, lastTouchedUid) : null;
@@ -764,6 +828,7 @@ export function executeToolCalls(toolCalls, ctx) {
           rotDeg: spot.rotDeg,
           finish: fin,
           expanded: false,
+          ...(cat.defaultFrontStyle ? { frontStyle: cat.defaultFrontStyle } : {}),
         };
         state.items.push(newItem);
         api.syncItemMesh(newItem, true);
@@ -1069,11 +1134,26 @@ function buildLLMSystemPrompt(state) {
       finish: it.finish,
     };
   });
-  // Keep prompt compact: include all core starter pieces + any currently placed live Renton items
+  // Keep prompt compact: if Hotlist-Only mode is active, STRICTLY restrict catalog to retained/placed + Considering Hotlist!
   const placedIds = new Set(state.items.map((it) => it.catalogId));
+  const hotlistArr = Array.isArray(state.hotlistIds) ? state.hotlistIds.filter((id) => ALL_CATALOG[id]) : [];
+  const hotlistSet = new Set(hotlistArr);
+  const enforceHotlist = !!state.hotlistOnly && hotlistArr.length > 0;
+
   const catalogIds = Object.values(ALL_CATALOG)
-    .filter((c) => !c.liveRenton || placedIds.has(c.id))
-    .map((c) => `${c.id} (${c.name}, ${c.w}x${c.d}", $${c.price})`);
+    .filter((c) => {
+      if (enforceHotlist) {
+        return c.retained || c.brand === 'Move-In' || placedIds.has(c.id) || hotlistSet.has(c.id);
+      }
+      return !c.liveRenton || placedIds.has(c.id) || hotlistSet.has(c.id);
+    })
+    .map((c) => `${c.id} (${c.name}, ${c.w}x${c.d}x${c.h}", $${c.price}${hotlistSet.has(c.id) ? ', HOTLIST' : ''})`);
+
+  const hotlistClause = enforceHotlist
+    ? `\nHARD CONSTRAINT — HOTLIST-ONLY MODE IS ON: You MUST ONLY add/recommend IKEA items from the user's Considering Hotlist (${hotlistArr.join(', ')}). NEVER call add_item for any other IKEA product! Prefer clear_ikea + add_item with hotlist items or run_optimizer.`
+    : hotlistArr.length > 0
+      ? `\nUser's Considering Hotlist (preferred shortlist): ${hotlistArr.join(', ')}.`
+      : '';
 
   const halfW = state.room.widthIn / 2;
   const halfL = state.room.lengthIn / 2;
@@ -1091,7 +1171,7 @@ Walls: North window wall z=${-halfL}, East window wall x=+${halfW}, Straight Wes
 Entry door swing zone: x in [${swX},${doorEndX}], z in [+${halfL - state.room.entryDoorWidthIn - 2},+${halfL}]. SE Closet clearance: x in [${closetLeftX},+${closetRightX}], z in [+${halfL - 15},+${halfL}].
 rotDeg: 0 faces South (+Z), 90 faces East (+X), 180 faces North (-Z), 270 faces West (-X).
 Current items: ${JSON.stringify(placed)}
-Catalog: ${catalogIds.join('; ')}
+Catalog: ${catalogIds.join('; ')}${hotlistClause}
 Presets: ${Object.keys(LAYOUT_PRESETS).join(', ')}
 
 Respond ONLY with strict JSON: {"reply": "short 1-2 sentence explanation", "tool_calls": [{"tool": "...", "args": {...}}]}

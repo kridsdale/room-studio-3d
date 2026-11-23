@@ -130,6 +130,7 @@
       <div id="opt-title" class="opt-title">Dual Office · Face-Off (East + West)</div>
       <div id="opt-meta" class="opt-meta">Nordic Oak &amp; Sage · 6 IKEA · $760 · Zero Collisions ✓</div>
     </div>
+    <button id="opt-hotlist-btn" class="opt-hotlist-btn" title="Restrict Optimizer &amp; AI Planner strictly to your ♥ Considering hotlist">♥ Hotlist Only (0)</button>
     <select id="opt-goal-select" class="select-pill" aria-label="Optimization Goal">
       <option value="dual_office" selected>Goal: Dual Home Office (42")</option>
       <option value="any">Goal: Surprise Me</option>
@@ -156,6 +157,14 @@
         <button id="agent-settings-btn" class="mini-btn" title="Configure Gemini 4 Neon / Carbon API key">⚙ Gemini 4</button>
         <button id="agent-close-btn" class="insp-close" aria-label="Close AI Planner">×</button>
       </div>
+    </div>
+
+    <div class="agent-hotlist-bar">
+      <label class="agent-hotlist-label" title="When ON, both the Algorithmic Optimizer and AI Planner (Built-in &amp; Gemini 4) ONLY use items in your ♥ Considering hotlist">
+        <input type="checkbox" id="agent-hotlist-chk" />
+        <span id="agent-hotlist-text">♥ Considering Hotlist Only (0 items)</span>
+      </label>
+      <button id="agent-view-hotlist-btn" class="meta-edit-btn" title="Filter Buy Mode dock to your Considering hotlist">View List</button>
     </div>
 
     <div id="agent-settings" class="agent-settings hidden">
@@ -253,7 +262,15 @@
       <span id="fisheye-fov-val" class="fe-fov-val">138°</span>
     </div>
 
-    <div class="fe-group fe-vantages" title="Jump to Eye-Level Room Vantage Points (5' 2&quot; height)">
+    <div class="fe-group fe-height-group" id="fe-height-wrap" title="Adjust 1st-Person Camera Eye Height (Key chord: Alt + ↑/↓ or PgUp/PgDn, Shift = 1&quot;)">
+      <label class="fe-label" for="eye-height-slider">EYE H</label>
+      <input id="eye-height-slider" class="fe-slider fe-height-slider" type="range" min="24" max="86" step="1" value="61" aria-label="First-person camera height in inches" />
+      <span id="eye-height-val" class="fe-fov-val fe-height-val">5' 1"</span>
+      <button id="eye-sit-btn" class="fe-vantage-btn" title="Seated desk eye height (3' 8&quot; / 44&quot;)">Sit</button>
+      <button id="eye-stand-btn" class="fe-vantage-btn" title="Standing eye height (5' 1&quot; / 61&quot;)">Stand</button>
+    </div>
+
+    <div class="fe-group fe-vantages" title="Jump to Eye-Level Room Vantage Points">
       <button class="fe-vantage-btn active" data-vantage="doorway">Doorway</button>
       <button class="fe-vantage-btn" data-vantage="nw">NW Window</button>
       <button class="fe-vantage-btn" data-vantage="ne">NE Corner</button>
@@ -279,6 +296,18 @@
         <button id="desk-wood-btn" class="mini-btn active" title="Existing bamboo standing desk from East wall">Wood 55"</button>
         <button id="desk-white-btn" class="mini-btn" title="Existing white desk from NW corner">White 48"</button>
       </div>
+    </section>
+
+    <section class="rail-card hotlist-rail-card">
+      <div class="rail-title">
+        <span id="hotlist-count-title">♥ Considering (0)</span>
+        <button id="hotlist-clear-btn" class="meta-edit-btn" title="Clear Considering hotlist" style="display:none;">Clear</button>
+      </div>
+      <label class="check-row hotlist-only-row" title="Restrict both ✦ Optimize/Shuffle and ✦ AI Planner strictly to items in your Considering list">
+        <span>Hotlist-Only Optimizers</span>
+        <input type="checkbox" id="chk-hotlist-only" />
+      </label>
+      <div id="hotlist-chips" class="hotlist-chips"></div>
     </section>
 
     <section class="rail-card">
@@ -313,6 +342,7 @@
         </div>
       </div>
       <div class="insp-head-btns">
+        <button id="insp-hotlist-btn" class="insp-close insp-hotlist-btn" title="Add/Remove from ♥ Considering hotlist" style="display:none;">♡</button>
         <button id="insp-collapse-btn" class="insp-close insp-collapse-btn" title="Collapse / Expand Inspector">▾</button>
         <button id="insp-close" class="insp-close" aria-label="Close inspector">×</button>
       </div>
@@ -328,6 +358,19 @@
           <div class="dim-box"><div class="k">Depth</div><div class="v" id="insp-d">-</div></div>
           <div class="dim-box"><div class="k">Height</div><div class="v" id="insp-h">-</div></div>
         </div>
+      </div>
+
+      <div id="insp-mount-wrap" class="insp-section insp-mount-box" style="display:none;">
+        <div class="insp-label">
+          <span>Wall Mount Height</span>
+          <span id="insp-mount-val" style="font-family:var(--font-mono);color:var(--text);">4' 6"</span>
+        </div>
+        <div class="mount-controls">
+          <button id="mount-down-btn" class="mini-btn" title="Lower 3&quot; (Alt+↓ or PgDn)">↓ -3"</button>
+          <input id="insp-mount-slider" class="range-input" type="range" min="18" max="80" step="1" value="54" aria-label="Wall shelf mounting height in inches" />
+          <button id="mount-up-btn" class="mini-btn" title="Raise 3&quot; (Alt+↑ or PgUp)">↑ +3"</button>
+        </div>
+        <div class="nudge-hint">Key chord: <kbd>Alt+↑↓</kbd> or <kbd>PgUp/PgDn</kbd> (hold <kbd>Shift</kbd> for 1")</div>
       </div>
 
       <div id="insp-expand-wrap" class="insp-section" style="display:none;">
@@ -399,7 +442,7 @@
 
   <!-- Subtle Dismissible Controls Hint -->
   <div id="controls-hint" class="controls-hint">
-    <span>Drag furniture to move · <kbd>↑↓←→</kbd> Nudge 25cm · <kbd>R</kbd> Rotate · <kbd>/</kbd> AI Planner</span>
+    <span>Drag to move · <kbd>↑↓←→</kbd> Nudge · <kbd>Alt+↑↓</kbd> Shelf / Eye Height · <kbd>R</kbd> Rotate · <kbd>/</kbd> AI Planner</span>
     <button id="dismiss-hint-btn" aria-label="Dismiss hint">×</button>
   </div>
 

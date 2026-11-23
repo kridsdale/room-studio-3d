@@ -311,7 +311,9 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
     frontFinish = null,
     hardware = 'auto',
     doorsOpen = false,
+    mountHeightIn = null,
   } = options;
+  const effectiveMountH = mountHeightIn ?? catalogEntry.mountHeightIn ?? 54;
   const group = new THREE.Group();
   const w = catalogEntry.w * IN_TO_M;
   const d = (expanded && catalogEntry.expandedD ? catalogEntry.expandedD : catalogEntry.d) * IN_TO_M;
@@ -1257,7 +1259,7 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
       addBox(group, 0.06, 0.008, 0.014, silverMetal, 0, cy - 0.012, d / 2 + 0.007, false);
     }
   } else if (type === 'eket_wall') {
-    const y0 = (catalogEntry.mountHeightIn || 54) * IN_TO_M;
+    const y0 = effectiveMountH * IN_TO_M;
     const t = 0.018;
     const innerH = h - t * 2 - 0.002;
     // Outer frame (verticals & backboard strictly inside top/bottom — zero corner z-fighting!)
@@ -1472,6 +1474,10 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
     }
   } else {
     addBox(group, w, h, d, primaryMat, 0, h / 2, 0);
+  }
+
+  if (catalogEntry.wallMounted && type !== 'eket_wall') {
+    group.position.y = effectiveMountH * IN_TO_M;
   }
 
   // Ensure every mesh participates cleanly in raycasting & shadows

@@ -213,9 +213,16 @@ export function checkPlacementStatus(candidate, allItems, catalogMap, room) {
       if (supportUid && other.uid === supportUid) continue;
       const oCat = catalogMap[other.catalogId];
       if (!oCat || oCat.isRug) continue;
-      // Wall-mounted items (y >= 54") clear low floor furniture; only collide with other wall-mounted or tall (>52") pieces!
-      if (cat.wallMounted && !oCat.wallMounted && (oCat.h || 0) < (cat.mountHeightIn || 52)) continue;
-      if (oCat.wallMounted && !cat.wallMounted && (cat.h || 0) < (oCat.mountHeightIn || 52)) continue;
+      // Wall-mounted items clear low floor furniture; only collide with other wall-mounted or tall pieces reaching mountHeightIn!
+      const myMount = candidate.mountHeightIn ?? cat.mountHeightIn ?? 54;
+      const otherMount = other.mountHeightIn ?? oCat.mountHeightIn ?? 54;
+      if (cat.wallMounted && !oCat.wallMounted && (oCat.h || 0) < myMount) continue;
+      if (oCat.wallMounted && !cat.wallMounted && (cat.h || 0) < otherMount) continue;
+      if (cat.wallMounted && oCat.wallMounted) {
+        const myTop = myMount + (cat.h || 14);
+        const oTop = otherMount + (oCat.h || 14);
+        if (myTop <= otherMount + 0.5 || oTop <= myMount + 0.5) continue;
+      }
       // Stackable tabletop item resting on a surface clears that surface & other floor items below it
       if (oCat.stackable && cat.isSurface) {
         const oSup = findSupportingSurface(other, allItems, catalogMap);
@@ -260,7 +267,8 @@ export function checkPlacementStatus(candidate, allItems, catalogMap, room) {
 
   // 5. Window light-obstruction check for tall or wall-mounted items
   if (!cat.isRug) {
-    const topH = (cat.wallMounted ? (cat.mountHeightIn || 54) : elevationIn) + (cat.h || 0);
+    const myMountH = candidate.mountHeightIn ?? cat.mountHeightIn ?? 54;
+    const topH = (cat.wallMounted ? myMountH : elevationIn) + (cat.h || 0);
     if (room.northWindow && topH > room.northWindow.sillIn + 6) {
       const nwX0 = -halfW + room.northWindow.offsetFromWestIn;
       const nwX1 = nwX0 + room.northWindow.widthIn;

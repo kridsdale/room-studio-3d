@@ -93,9 +93,16 @@ export async function idbGet(key) {
 
 export function buildConfigSnapshot(state, name = 'Current Configuration', budgetCap = 1200, allCatalog = null) {
   const dynamicCatalog = {};
+  const hotlistIds = Array.isArray(state.hotlistIds) ? Array.from(new Set(state.hotlistIds.filter(Boolean))) : [];
   if (allCatalog) {
     for (const it of state.items || []) {
       const c = allCatalog[it.catalogId];
+      if (c && c.liveRenton && !dynamicCatalog[c.id]) {
+        dynamicCatalog[c.id] = { ...c };
+      }
+    }
+    for (const hid of hotlistIds) {
+      const c = allCatalog[hid];
       if (c && c.liveRenton && !dynamicCatalog[c.id]) {
         dynamicCatalog[c.id] = { ...c };
       }
@@ -107,7 +114,9 @@ export function buildConfigSnapshot(state, name = 'Current Configuration', budge
     name: String(name || 'Untitled Layout').trim().slice(0, 80),
     room: { ...state.room },
     retainedDeskId: state.retainedDeskId || 'retained_wood_desk',
-    items: (state.items || []).map(({ uid, catalogId, x, z, rotDeg, finish, expanded, frontStyle, frontFinish, hardware, doorsOpen }) => ({
+    hotlistIds,
+    hotlistOnly: !!state.hotlistOnly,
+    items: (state.items || []).map(({ uid, catalogId, x, z, rotDeg, finish, expanded, frontStyle, frontFinish, hardware, doorsOpen, mountHeightIn }) => ({
       uid,
       catalogId,
       x: Math.round(Number(x) * 100) / 100,
@@ -119,6 +128,7 @@ export function buildConfigSnapshot(state, name = 'Current Configuration', budge
       ...(frontFinish ? { frontFinish } : {}),
       ...(hardware && hardware !== 'auto' ? { hardware } : {}),
       ...(doorsOpen ? { doorsOpen: true } : {}),
+      ...(Number.isFinite(Number(mountHeightIn)) ? { mountHeightIn: Math.round(Number(mountHeightIn)) } : {}),
     })),
     ...(Object.keys(dynamicCatalog).length > 0 ? { dynamicCatalog } : {}),
     settings: {
@@ -130,6 +140,7 @@ export function buildConfigSnapshot(state, name = 'Current Configuration', budge
         : 'equidistant',
       fisheyeFovDeg: clampNum(state.fisheyeFovDeg, 90, 165, 138),
       eyeVantage: ['doorway', 'nw', 'ne', 'se', 'center'].includes(state.eyeVantage) ? state.eyeVantage : 'doorway',
+      eyeHeightIn: clampNum(state.eyeHeightIn, 24, 86, 61),
       showGrid: state.showGrid !== false,
       showClearances: state.showClearances !== false,
       showDimensions: state.showDimensions !== false,
@@ -216,6 +227,7 @@ export function validateAndNormalizeConfig(raw, allCatalog, defaultRoom) {
         ? it.finish
         : cat.defaultFinish;
 
+    const maxMountH = Math.max(24, (room.heightIn || 96) - (cat.h || 14) - 1);
     items.push({
       uid,
       catalogId: cat.id,
@@ -228,8 +240,16 @@ export function validateAndNormalizeConfig(raw, allCatalog, defaultRoom) {
       ...(typeof it.frontFinish === 'string' && it.frontFinish ? { frontFinish: it.frontFinish } : {}),
       ...(typeof it.hardware === 'string' && it.hardware ? { hardware: it.hardware } : {}),
       ...(it.doorsOpen ? { doorsOpen: true } : {}),
+      ...(cat.wallMounted && Number.isFinite(Number(it.mountHeightIn))
+        ? { mountHeightIn: clampNum(Math.round(Number(it.mountHeightIn)), 18, maxMountH, cat.mountHeightIn || 54) }
+        : {}),
     });
   }
+
+  const hotlistIds = Array.isArray(raw.hotlistIds)
+    ? Array.from(new Set(raw.hotlistIds.filter((id) => typeof id === 'string' && allCatalog[id])))
+    : [];
+  const hotlistOnly = !!raw.hotlistOnly;
 
   const retainedDeskId =
     raw.retainedDeskId === 'retained_white_desk' || items.some((i) => i.catalogId === 'retained_white_desk')
@@ -246,6 +266,7 @@ export function validateAndNormalizeConfig(raw, allCatalog, defaultRoom) {
       : 'equidistant',
     fisheyeFovDeg: clampNum(s.fisheyeFovDeg, 90, 165, 138),
     eyeVantage: ['doorway', 'nw', 'ne', 'se', 'center'].includes(s.eyeVantage) ? s.eyeVantage : 'doorway',
+    eyeHeightIn: clampNum(s.eyeHeightIn, 24, 86, 61),
     showGrid: s.showGrid !== false,
     showClearances: s.showClearances !== false,
     showDimensions: s.showDimensions !== false,
@@ -261,7 +282,10 @@ export function validateAndNormalizeConfig(raw, allCatalog, defaultRoom) {
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, 80) : 'Imported Layout',
     room,
     retainedDeskId,
+    hotlistIds,
+    hotlistOnly,
     items,
+    ...(Object.keys(dynamicCatalog).length > 0 ? { dynamicCatalog } : {}),
     settings,
   };
 
