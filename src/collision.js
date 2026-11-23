@@ -206,13 +206,36 @@ export function checkPlacementStatus(candidate, allItems, catalogMap, room) {
     warnings.push('Extends past room wall');
   }
 
-  // 2. Furniture-to-furniture OBB collision (respects surface stacking & wall-mounted elevation!)
+  // 2. Furniture-to-furniture OBB collision (respects surface stacking, wall-mounted elevation & office chair tuck-under!)
+  const DESK_MESH_TYPES = new Set([
+    'retained_wood_desk',
+    'retained_white_desk',
+    'desk_42_monitor',
+    'ikea_desk',
+  ]);
+  const isOfficeChair = (c) => {
+    if (!c) return false;
+    if (c.meshType === 'office_chair') return true;
+    const text = `${c.name || ''} ${c.subtitle || ''}`.toLowerCase();
+    return text.includes('office chair') || text.includes('desk chair') || text.includes('swivel chair');
+  };
+  const isDesk = (c) => {
+    if (!c) return false;
+    if (DESK_MESH_TYPES.has(c.meshType)) return true;
+    const text = `${c.name || ''} ${c.subtitle || ''}`.toLowerCase();
+    return /\bdesk\b/.test(text) && c.category === 'tables';
+  };
+
   if (!cat.isRug) {
     for (const other of allItems) {
       if (other.uid === candidate.uid) continue;
       if (supportUid && other.uid === supportUid) continue;
       const oCat = catalogMap[other.catalogId];
       if (!oCat || oCat.isRug) continue;
+      // Office chairs are allowed to tuck underneath / intersect desks!
+      if ((isOfficeChair(cat) && isDesk(oCat)) || (isDesk(cat) && isOfficeChair(oCat))) {
+        continue;
+      }
       // Wall-mounted items clear low floor furniture; only collide with other wall-mounted or tall pieces reaching mountHeightIn!
       const myMount = candidate.mountHeightIn ?? cat.mountHeightIn ?? 54;
       const otherMount = other.mountHeightIn ?? oCat.mountHeightIn ?? 54;

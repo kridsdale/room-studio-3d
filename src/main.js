@@ -72,6 +72,8 @@ const STORAGE_KEY = 'room_planner_v4_state';
 const AGENT_CFG_KEY = 'room_planner_llm_cfg';
 const NUDGE_STEP_CM = 25;
 const NUDGE_FINE_CM = 5;
+const NUDGE_MINUTE_CM = 1;
+const NUDGE_MICRO_CM = 0.5;
 const CM_TO_IN = 1 / 2.54;
 
 const state = {
@@ -862,14 +864,14 @@ function applyGhostTint(mode) {
   }
 }
 
-function updateGhostAtWorldPoint(worldPt) {
+function updateGhostAtWorldPoint(worldPt, freePlace = false) {
   if (!ghostGroup || !state.placingCatalogId) return;
   const cat = ALL_CATALOG[state.placingCatalogId];
   const rawX = worldPt.x * M_TO_IN;
   const rawZ = worldPt.z * M_TO_IN;
   const snapped = clampAndSnapToRoom(rawX, rawZ, cat.w, cat.d, state.placingRotDeg, state.room, {
-    gridSnapIn: state.gridSnapIn,
-    wallSnap: state.wallSnap,
+    gridSnapIn: freePlace ? 0 : state.gridSnapIn,
+    wallSnap: freePlace ? false : state.wallSnap,
   });
 
   const status = checkPlacementStatus(
@@ -1124,7 +1126,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 
   if (state.placingCatalogId) {
     const pt = raycastFloor(e);
-    if (pt) updateGhostAtWorldPoint(pt);
+    if (pt) updateGhostAtWorldPoint(pt, e.altKey);
     return;
   }
 
@@ -1142,7 +1144,10 @@ renderer.domElement.addEventListener('pointermove', (e) => {
       dims.d,
       draggingItem.rotDeg,
       state.room,
-      { gridSnapIn: state.gridSnapIn, wallSnap: state.wallSnap }
+      {
+        gridSnapIn: e.altKey ? 0 : state.gridSnapIn,
+        wallSnap: e.altKey ? false : state.wallSnap,
+      }
     );
     draggingItem.x = snapped.x;
     draggingItem.z = snapped.z;
@@ -1305,16 +1310,24 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Vertical Adjustment Key Chords: Alt + ↑/↓ or PageUp/PageDown (Shift = 1" fine step, default = 3")
-  // Applies to selected wall-mounted shelf first; otherwise adjusts 1st-Person Eye camera elevation!
-  const isVertUp = (e.altKey && e.key === 'ArrowUp') || e.key === 'PageUp' || (state.viewMode === 'fp' && !state.selectedUid && key === 'e');
-  const isVertDown = (e.altKey && e.key === 'ArrowDown') || e.key === 'PageDown' || (state.viewMode === 'fp' && !state.selectedUid && key === 'q');
+  // Vertical Adjustment Key Chords:
+  // - Wall-mounted shelf selected: Alt + ↑/↓ or PageUp/PageDown (Shift = 1", default = 3")
+  // - 1st-Person Eye camera (when NO floor item is selected, or always via PageUp/PageDown / E / Q)
+  const selItem = state.selectedUid ? state.items.find((i) => i.uid === state.selectedUid) : null;
+  const selCat = selItem ? ALL_CATALOG[selItem.catalogId] : null;
+  const isWallShelfSelected = !!(selItem && selCat?.wallMounted);
+  const isVertUp =
+    e.key === 'PageUp' ||
+    (e.altKey && e.key === 'ArrowUp' && (isWallShelfSelected || !selItem)) ||
+    (state.viewMode === 'fp' && !state.selectedUid && key === 'e');
+  const isVertDown =
+    e.key === 'PageDown' ||
+    (e.altKey && e.key === 'ArrowDown' && (isWallShelfSelected || !selItem)) ||
+    (state.viewMode === 'fp' && !state.selectedUid && key === 'q');
   if (isVertUp || isVertDown) {
     const stepIn = e.shiftKey ? 1 : 3;
     const deltaIn = isVertUp ? stepIn : -stepIn;
-    const selItem = state.selectedUid ? state.items.find((i) => i.uid === state.selectedUid) : null;
-    const selCat = selItem ? ALL_CATALOG[selItem.catalogId] : null;
-    if (selItem && selCat?.wallMounted) {
+    if (isWallShelfSelected) {
       e.preventDefault();
       adjustSelectedMountHeight(deltaIn);
       return;
@@ -1326,15 +1339,24 @@ window.addEventListener('keydown', (e) => {
     }
   }
 
-  // Cartesian Arrow-Key Nudging (25 cm default, 5 cm with Shift!)
+  // Cartesian Arrow-Key Nudging (Sims-style minute adjustment with Alt / Option!)
+  //   - Plain Arrows:        25 cm (~10")
+  //   - Shift + Arrows:       5 cm (~2")
+  //   - Alt + Arrows:         1 cm (~3/8")  [Sims Minute Adjustment]
+  //   - Alt + Shift + Arrows: 0.5 cm (~1/4") [Ultra-Micro]
   if (
     state.selectedUid &&
     !state.placingCatalogId &&
-    !e.altKey &&
     (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')
   ) {
     e.preventDefault();
-    const stepCm = e.shiftKey ? NUDGE_FINE_CM : NUDGE_STEP_CM;
+    const stepCm = e.altKey
+      ? e.shiftKey
+        ? NUDGE_MICRO_CM
+        : NUDGE_MINUTE_CM
+      : e.shiftKey
+      ? NUDGE_FINE_CM
+      : NUDGE_STEP_CM;
     const stepIn = stepCm * CM_TO_IN;
     if (e.key === 'ArrowUp') nudgeSelected(0, -stepIn);       // North (-Z)
     else if (e.key === 'ArrowDown') nudgeSelected(0, stepIn); // South (+Z)
@@ -1373,7 +1395,7 @@ window.addEventListener('keydown', (e) => {
   }
 
   if (key === 'r') {
-    const step = e.shiftKey ? 15 : 90;
+    const step = e.altKey ? 1 : e.shiftKey ? 15 : 90;
     if (state.placingCatalogId && ghostGroup) {
       state.placingRotDeg = normDeg(state.placingRotDeg + step);
       ghostGroup.rotation.y = (state.placingRotDeg * Math.PI) / 180;
@@ -1381,9 +1403,9 @@ window.addEventListener('keydown', (e) => {
       rotateSelected(step);
     }
   } else if (key === 'q' && state.selectedUid) {
-    rotateSelected(-15);
+    rotateSelected(e.altKey ? -1 : -15);
   } else if (key === 'e' && state.selectedUid) {
-    rotateSelected(15);
+    rotateSelected(e.altKey ? 1 : 15);
   } else if ((key === 'delete' || key === 'backspace') && state.selectedUid) {
     deleteSelected();
   } else if ((e.metaKey || e.ctrlKey) && key === 'z') {
@@ -3373,7 +3395,16 @@ function initUI() {
   }
 
   // Inspector Cartesian Nudge Pad (25 cm default, Shift+click = 5 cm)
-  const stepInFromEvent = (e) => (e.shiftKey ? NUDGE_FINE_CM : NUDGE_STEP_CM) * CM_TO_IN;
+  const stepInFromEvent = (e) => {
+    const cm = e.altKey
+      ? e.shiftKey
+        ? NUDGE_MICRO_CM
+        : NUDGE_MINUTE_CM
+      : e.shiftKey
+      ? NUDGE_FINE_CM
+      : NUDGE_STEP_CM;
+    return cm * CM_TO_IN;
+  };
   document.getElementById('nudge-n').onclick = (e) => nudgeSelected(0, -stepInFromEvent(e));
   document.getElementById('nudge-s').onclick = (e) => nudgeSelected(0, stepInFromEvent(e));
   document.getElementById('nudge-w').onclick = (e) => nudgeSelected(-stepInFromEvent(e), 0);
