@@ -328,6 +328,7 @@ function syncRTButtonsUI() {
     photoRtBtn.classList.toggle('active', isRT);
     photoRtBtn.textContent = isRT ? '✦ GPU RT: ON' : '✦ GPU RT: Off';
   }
+  syncFisheyeFovMax();
   updateRTStatusPill(true);
 }
 
@@ -1678,17 +1679,42 @@ function setFisheyeMode(lensMode) {
   syncPhotoHudControls();
 }
 
+function getMaxFisheyeFovDeg() {
+  const isRTActive =
+    state.renderMode === 'rt' ||
+    (state.photoMode && state.photoEngine === 'cpu_pbr');
+  return isRTActive ? 180 : 165;
+}
+
+function syncFisheyeFovMax() {
+  const maxFov = getMaxFisheyeFovDeg();
+  const slider = document.getElementById('fisheye-fov-slider');
+  const pSlider = document.getElementById('photo-fov-slider');
+  if (slider) slider.max = String(maxFov);
+  if (pSlider) pSlider.max = String(maxFov);
+  if (state.fisheyeFovDeg > maxFov) {
+    setFisheyeFovDeg(maxFov);
+  }
+}
+
 function setFisheyeFovDeg(deg) {
-  const clamped = Math.max(90, Math.min(165, Math.round(Number(deg) || 138)));
+  const maxFov = getMaxFisheyeFovDeg();
+  const clamped = Math.max(90, Math.min(maxFov, Math.round(Number(deg) || 138)));
   state.fisheyeFovDeg = clamped;
   fisheyeRig.setHFovDeg(clamped);
   const slider = document.getElementById('fisheye-fov-slider');
   const valEl = document.getElementById('fisheye-fov-val');
-  if (slider) slider.value = String(clamped);
+  if (slider) {
+    slider.max = String(maxFov);
+    slider.value = String(clamped);
+  }
   if (valEl) valEl.textContent = `${clamped}°`;
   const pSlider = document.getElementById('photo-fov-slider');
   const pVal = document.getElementById('photo-fov-val');
-  if (pSlider) pSlider.value = String(clamped);
+  if (pSlider) {
+    pSlider.max = String(maxFov);
+    pSlider.value = String(clamped);
+  }
   if (pVal) pVal.textContent = `${clamped}°`;
   invalidateFisheye();
 }

@@ -138,7 +138,7 @@ export function buildConfigSnapshot(state, name = 'Current Configuration', budge
       fisheyeMode: ['equidistant', 'panini', 'stereographic', 'rectilinear'].includes(state.fisheyeMode)
         ? state.fisheyeMode
         : 'equidistant',
-      fisheyeFovDeg: clampNum(state.fisheyeFovDeg, 90, 165, 138),
+      fisheyeFovDeg: clampNum(state.fisheyeFovDeg, 90, 180, 138),
       eyeVantage: ['doorway', 'nw', 'ne', 'se', 'center'].includes(state.eyeVantage) ? state.eyeVantage : 'doorway',
       eyeHeightIn: clampNum(state.eyeHeightIn, 24, 86, 61),
       showGrid: state.showGrid !== false,
@@ -265,7 +265,7 @@ export function validateAndNormalizeConfig(raw, allCatalog, defaultRoom) {
     fisheyeMode: ['equidistant', 'panini', 'stereographic', 'rectilinear'].includes(s.fisheyeMode)
       ? s.fisheyeMode
       : 'equidistant',
-    fisheyeFovDeg: clampNum(s.fisheyeFovDeg, 90, 165, 138),
+    fisheyeFovDeg: clampNum(s.fisheyeFovDeg, 90, 180, 138),
     eyeVantage: ['doorway', 'nw', 'ne', 'se', 'center'].includes(s.eyeVantage) ? s.eyeVantage : 'doorway',
     eyeHeightIn: clampNum(s.eyeHeightIn, 24, 86, 61),
     showGrid: s.showGrid !== false,

@@ -196,7 +196,7 @@ export class FisheyeLensRig {
   }
 
   setHFovDeg(deg) {
-    this.hFovDeg = Math.max(85, Math.min(165, Number(deg) || 138));
+    this.hFovDeg = Math.max(85, Math.min(180, Number(deg) || 138));
     this.material.uniforms.uHalfFovRad.value = THREE.MathUtils.degToRad(this.hFovDeg * 0.5);
   }
 
