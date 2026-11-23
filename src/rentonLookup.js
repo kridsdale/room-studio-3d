@@ -347,6 +347,28 @@ export function mapIkeaProductToCatalogItem(prod, forcedCategory = null) {
       }
       return true;
     }
+    if (/tonstad/.test(text) && /cabinet|bookcase|storage|sideboard|dresser|shelving/.test(text)) {
+      category = 'storage';
+      w = parsed?.w || 32.1;
+      d = parsed?.d || 14.6;
+      h = parsed?.h || 47.25;
+      isSurface = h <= 50;
+      if (h >= 72 && d >= 17) {
+        meshType = 'tonstad_hutch';
+      } else {
+        meshType = 'tonstad_cabinet';
+      }
+      return true;
+    }
+    if (/idan[äa]s/.test(text) && /cabinet|sideboard|bookcase|storage/.test(text)) {
+      category = 'storage';
+      meshType = 'idanas_cabinet';
+      w = parsed?.w || 31.9;
+      d = parsed?.d || 15.4;
+      h = parsed?.h || 83.1;
+      isSurface = h <= 45;
+      return true;
+    }
     if (/dresser|chest of.*drawer|cabinet|sideboard/.test(text)) {
       category = 'storage';
       isSurface = true;

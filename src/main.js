@@ -5,6 +5,9 @@ import {
   M_TO_IN,
   DEFAULT_ROOM,
   FINISH_SWATCHES,
+  FRONT_STYLES,
+  HARDWARE_STYLES,
+  FRONT_FINISH_CHOICES,
   CATEGORIES,
   IKEA_CATALOG,
   RETAINED_CATALOG,
@@ -412,7 +415,13 @@ function syncItemMesh(item, animatePop = false) {
 
   const wrapper = new THREE.Group();
   wrapper.userData.uid = item.uid;
-  const mesh = createFurnitureMesh(cat, item.finish, { expanded: !!item.expanded });
+  const mesh = createFurnitureMesh(cat, item.finish, {
+    expanded: !!item.expanded,
+    frontStyle: item.frontStyle || cat.defaultFrontStyle || null,
+    frontFinish: item.frontFinish || null,
+    hardware: item.hardware || 'auto',
+    doorsOpen: !!item.doorsOpen,
+  });
   mesh.traverse((c) => {
     c.userData.uid = item.uid;
   });
@@ -453,15 +462,22 @@ function loadItemsList(rawItems, saveUndo = false) {
     furnitureRoot.remove(entry.group);
   }
   meshByUid.clear();
-  state.items = rawItems.map((it) => ({
-    uid: it.uid || nextUid(),
-    catalogId: it.catalogId,
-    x: it.x,
-    z: it.z,
-    rotDeg: normDeg(it.rotDeg || 0),
-    finish: it.finish || ALL_CATALOG[it.catalogId]?.defaultFinish || 'white',
-    expanded: !!it.expanded,
-  }));
+  state.items = rawItems.map((it) => {
+    const cat = ALL_CATALOG[it.catalogId];
+    return {
+      uid: it.uid || nextUid(),
+      catalogId: it.catalogId,
+      x: it.x,
+      z: it.z,
+      rotDeg: normDeg(it.rotDeg || 0),
+      finish: it.finish || cat?.defaultFinish || 'white',
+      expanded: !!it.expanded,
+      ...(it.frontStyle || cat?.defaultFrontStyle ? { frontStyle: it.frontStyle || cat?.defaultFrontStyle } : {}),
+      ...(it.frontFinish ? { frontFinish: it.frontFinish } : {}),
+      ...(it.hardware ? { hardware: it.hardware } : {}),
+      ...(it.doorsOpen ? { doorsOpen: true } : {}),
+    };
+  });
 
   const hasWhite = state.items.some((i) => i.catalogId === 'retained_white_desk');
   const hasWood = state.items.some((i) => i.catalogId === 'retained_wood_desk');
@@ -820,6 +836,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
     }
     const snapped = ghostGroup.userData.snapped;
     pushUndoSnapshot();
+    const placeCat = ALL_CATALOG[state.placingCatalogId];
     const newItem = {
       uid: nextUid(),
       catalogId: state.placingCatalogId,
@@ -828,6 +845,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
       rotDeg: normDeg(state.placingRotDeg),
       finish: state.placingFinish,
       expanded: false,
+      ...(placeCat?.defaultFrontStyle ? { frontStyle: placeCat.defaultFrontStyle } : {}),
     };
     state.items.push(newItem);
     syncItemMesh(newItem, true);
@@ -1173,6 +1191,10 @@ function duplicateSelected() {
     rotDeg: normDeg(item.rotDeg),
     finish: item.finish,
     expanded: item.expanded,
+    ...(item.frontStyle ? { frontStyle: item.frontStyle } : {}),
+    ...(item.frontFinish ? { frontFinish: item.frontFinish } : {}),
+    ...(item.hardware ? { hardware: item.hardware } : {}),
+    ...(item.doorsOpen ? { doorsOpen: true } : {}),
   };
   state.items.push(copy);
   syncItemMesh(copy, true);
@@ -1772,6 +1794,104 @@ function updateInspector() {
     expandWrap.style.display = 'none';
   }
 
+  const frontsWrap = document.getElementById('insp-fronts-wrap');
+  const finishLabelEl = document.getElementById('insp-finish-label');
+  const styleOptions = FRONT_STYLES[cat.meshType] || null;
+  if (frontsWrap && styleOptions && styleOptions.length > 0) {
+    frontsWrap.style.display = 'block';
+    if (finishLabelEl) finishLabelEl.textContent = 'Frame / Carcass Finish';
+
+    const styleSel = document.getElementById('insp-front-style');
+    const curStyle = item.frontStyle || cat.defaultFrontStyle || styleOptions[0].id;
+    styleSel.innerHTML = '';
+    for (const opt of styleOptions) {
+      const o = document.createElement('option');
+      o.value = opt.id;
+      o.textContent = opt.label;
+      if (opt.id === curStyle) o.selected = true;
+      styleSel.appendChild(o);
+    }
+    styleSel.onchange = () => {
+      pushUndoSnapshot();
+      item.frontStyle = styleSel.value;
+      syncItemMesh(item, false);
+      revalidateAllItems();
+      updateInspector();
+      saveToStorage();
+    };
+
+    const hwSel = document.getElementById('insp-hardware-style');
+    const curHw = item.hardware || 'auto';
+    hwSel.innerHTML = '';
+    for (const hw of HARDWARE_STYLES) {
+      const o = document.createElement('option');
+      o.value = hw.id;
+      o.textContent = hw.label;
+      if (hw.id === curHw) o.selected = true;
+      hwSel.appendChild(o);
+    }
+    hwSel.onchange = () => {
+      pushUndoSnapshot();
+      item.hardware = hwSel.value;
+      syncItemMesh(item, false);
+      revalidateAllItems();
+      updateInspector();
+      saveToStorage();
+    };
+
+    const frontSwatchRow = document.getElementById('insp-front-swatches');
+    frontSwatchRow.innerHTML = '';
+    const matchBtn = document.createElement('button');
+    matchBtn.className = `swatch match-chip ${!item.frontFinish ? 'active' : ''}`;
+    matchBtn.textContent = 'Match';
+    matchBtn.title = 'Match cabinet frame finish';
+    matchBtn.onclick = () => {
+      pushUndoSnapshot();
+      delete item.frontFinish;
+      syncItemMesh(item, false);
+      revalidateAllItems();
+      updateInspector();
+      saveToStorage();
+    };
+    frontSwatchRow.appendChild(matchBtn);
+
+    for (const fk of FRONT_FINISH_CHOICES) {
+      const sw = FINISH_SWATCHES[fk];
+      if (!sw) continue;
+      const b = document.createElement('button');
+      b.className = `swatch ${item.frontFinish === fk ? 'active' : ''}`;
+      b.style.background = sw.hex;
+      b.title = `Fronts: ${sw.label}`;
+      b.onclick = () => {
+        pushUndoSnapshot();
+        item.frontFinish = fk;
+        syncItemMesh(item, false);
+        revalidateAllItems();
+        updateInspector();
+        saveToStorage();
+      };
+      frontSwatchRow.appendChild(b);
+    }
+
+    const doorsBtn = document.getElementById('insp-doors-btn');
+    if (doorsBtn) {
+      const isOpen = !!item.doorsOpen;
+      doorsBtn.textContent = isOpen ? 'Close Doors' : 'Open Doors';
+      doorsBtn.classList.toggle('open-active', isOpen);
+      doorsBtn.onclick = () => {
+        pushUndoSnapshot();
+        item.doorsOpen = !item.doorsOpen;
+        syncItemMesh(item, false);
+        revalidateAllItems();
+        updateInspector();
+        saveToStorage();
+      };
+    }
+  } else {
+    if (frontsWrap) frontsWrap.style.display = 'none';
+    if (finishLabelEl) finishLabelEl.textContent = 'Finish / Color';
+  }
+
   const swatchRow = document.getElementById('insp-swatches');
   swatchRow.innerHTML = '';
   for (const fk of cat.finishes || ['white']) {
@@ -1839,7 +1959,9 @@ function renderCatalogCards() {
   const strip = document.getElementById('catalog-strip');
   const q = state.searchQuery.trim().toLowerCase();
   const filtered = IKEA_CATALOG.filter((item) => {
-    const matchCat = state.activeCategory === 'all' || item.category === state.activeCategory;
+    const matchCat =
+      state.activeCategory === 'all' ||
+      (state.activeCategory === 'renton_picks' ? !!item.rentonPick : item.category === state.activeCategory);
     const matchQ =
       !q ||
       item.name.toLowerCase().includes(q) ||
@@ -2448,7 +2570,7 @@ function initUI() {
   const catTabs = document.getElementById('cat-tabs');
   for (const c of CATEGORIES) {
     const btn = document.createElement('button');
-    btn.className = `cat-tab ${c.id === 'all' ? 'active' : ''}`;
+    btn.className = `cat-tab ${c.id === 'all' ? 'active' : ''} ${c.id === 'renton_picks' ? 'renton-pick-tab' : ''}`.trim();
     btn.textContent = c.label;
     btn.onclick = () => {
       state.activeCategory = c.id;

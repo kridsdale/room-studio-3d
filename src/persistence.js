@@ -107,7 +107,7 @@ export function buildConfigSnapshot(state, name = 'Current Configuration', budge
     name: String(name || 'Untitled Layout').trim().slice(0, 80),
     room: { ...state.room },
     retainedDeskId: state.retainedDeskId || 'retained_wood_desk',
-    items: (state.items || []).map(({ uid, catalogId, x, z, rotDeg, finish, expanded }) => ({
+    items: (state.items || []).map(({ uid, catalogId, x, z, rotDeg, finish, expanded, frontStyle, frontFinish, hardware, doorsOpen }) => ({
       uid,
       catalogId,
       x: Math.round(Number(x) * 100) / 100,
@@ -115,6 +115,10 @@ export function buildConfigSnapshot(state, name = 'Current Configuration', budge
       rotDeg: normDeg(rotDeg),
       finish,
       expanded: !!expanded,
+      ...(frontStyle ? { frontStyle } : {}),
+      ...(frontFinish ? { frontFinish } : {}),
+      ...(hardware && hardware !== 'auto' ? { hardware } : {}),
+      ...(doorsOpen ? { doorsOpen: true } : {}),
     })),
     ...(Object.keys(dynamicCatalog).length > 0 ? { dynamicCatalog } : {}),
     settings: {
@@ -220,6 +224,10 @@ export function validateAndNormalizeConfig(raw, allCatalog, defaultRoom) {
       rotDeg: normDeg(it.rotDeg),
       finish,
       expanded: !!it.expanded && !!cat.expandable,
+      ...(typeof it.frontStyle === 'string' && it.frontStyle ? { frontStyle: it.frontStyle } : {}),
+      ...(typeof it.frontFinish === 'string' && it.frontFinish ? { frontFinish: it.frontFinish } : {}),
+      ...(typeof it.hardware === 'string' && it.hardware ? { hardware: it.hardware } : {}),
+      ...(it.doorsOpen ? { doorsOpen: true } : {}),
     });
   }
 
