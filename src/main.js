@@ -2173,10 +2173,10 @@ function updateHotlistUI() {
       empty.innerHTML = `Tap <strong>♡</strong> on catalog cards to shortlist items for the optimizers.`;
       const quickBtn = document.createElement('button');
       quickBtn.className = 'mini-btn hotlist-quick-btn';
-      quickBtn.textContent = '+ Load Renton Cabinet Picks';
-      quickBtn.title = 'Add TONSTAD Double Hutch, TONSTAD Sliding Glass 47½", IDANÄS High Cabinet, KALLAX 4×4 & MARKUS to Considering';
+      quickBtn.textContent = '+ Load TONSTAD SPECIAL (4)';
+      quickBtn.title = 'Add all 4 TONSTAD SPECIAL items (TV Unit, Glass Hutch, Solid Hutch, BILLY Narrow Oak) to Considering & enable Hotlist-Only';
       quickBtn.onclick = () => {
-        const starter = ['tonstad_double_hutch', 'tonstad_sliding_glass_wide', 'idanas_high_cabinet', 'kallax_4x4', 'markus_chair'];
+        const starter = ['tonstad_tv_unit', 'tonstad_storage_glass_oak', 'tonstad_storage_solid_oak', 'billy_narrow_oak'];
         for (const id of starter) {
           if (ALL_CATALOG[id] && !state.hotlistIds.includes(id)) state.hotlistIds.push(id);
         }
@@ -2237,11 +2237,13 @@ function renderCatalogCards() {
   const filtered = IKEA_CATALOG.filter((item) => {
     const matchCat =
       state.activeCategory === 'all' ||
-      (state.activeCategory === 'renton_picks'
-        ? !!item.rentonPick
-        : state.activeCategory === 'considering'
-          ? hotSet.has(item.id)
-          : item.category === state.activeCategory);
+      (state.activeCategory === 'tonstad_special'
+        ? !!item.tonstadSpecial
+        : state.activeCategory === 'renton_picks'
+          ? !!item.rentonPick
+          : state.activeCategory === 'considering'
+            ? hotSet.has(item.id)
+            : item.category === state.activeCategory);
     const matchQ =
       !q ||
       item.name.toLowerCase().includes(q) ||
@@ -2890,7 +2892,7 @@ function initUI() {
   for (const c of CATEGORIES) {
     const btn = document.createElement('button');
     btn.dataset.cat = c.id;
-    btn.className = `cat-tab ${c.id === 'all' ? 'active' : ''} ${c.id === 'renton_picks' ? 'renton-pick-tab' : ''} ${c.id === 'considering' ? 'considering-tab' : ''}`.trim();
+    btn.className = `cat-tab ${c.id === 'all' ? 'active' : ''} ${c.id === 'tonstad_special' ? 'tonstad-special-tab' : ''} ${c.id === 'renton_picks' ? 'renton-pick-tab' : ''} ${c.id === 'considering' ? 'considering-tab' : ''}`.trim();
     btn.textContent = c.label;
     btn.onclick = () => {
       state.activeCategory = c.id;

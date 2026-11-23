@@ -3030,7 +3030,20 @@ html, body {
   text-decoration: underline;
 }
 
-/* ======================== CONSIDERING HOTLIST (PRE-CART) ======================== */
+/* ======================== CONSIDERING HOTLIST (PRE-CART) & TONSTAD SPECIAL ======================== */
+.cat-tab.tonstad-special-tab {
+  color: #92400e;
+  border-color: rgba(180, 83, 9, 0.34);
+  background: rgba(217, 119, 6, 0.11);
+  font-weight: 800;
+}
+
+.cat-tab.tonstad-special-tab.active {
+  background: #b45309;
+  color: #fff;
+  border-color: #b45309;
+}
+
 .cat-tab.considering-tab {
   color: #be123c;
   border-color: rgba(190, 18, 60, 0.25);

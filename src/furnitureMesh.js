@@ -644,12 +644,11 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
       addBox(group, 0.06, 0.03, 0.28, darkMetal, sx * (w * 0.42), 0.672, 0.02);
     }
   } else if (type === 'tonstad_cabinet') {
-    // Authentic TONSTAD architectural bookcase, sliding glass/solid cabinet, hinged base, or 4-drawer dresser
+    // Authentic TONSTAD architectural bookcase, TV unit, sliding glass/solid cabinet, hinged base, or 4-drawer dresser
     const style = frontStyle || catalogEntry.defaultFrontStyle || 'sliding_glass';
-    const bays = catalogEntry.bays || (w > 1.35 ? 2 : 1);
+    const bays = catalogEntry.bays ?? (w > 1.35 ? 2 : 1);
     const t = 0.026; // thick brushed veneer outer shell
     const plinthH = 0.068;
-    const bodyH = h - plinthH - t;
     const innerW = w - t * 2 - 0.002;
     const backT = 0.014;
     const innerD = d - backT - 0.036;
@@ -666,9 +665,9 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
     addBox(group, t, sideH, d, primaryMat, w / 2 - t / 2, sideCy, 0);
     // Full backboard strictly inside carcass
     addBox(group, innerW, sideH - 0.002, backT, primaryMat, 0, sideCy, -d / 2 + backT / 2 + 0.002);
-    // Center vertical divider for 2-bay (64") double credenza
-    if (bays === 2) {
-      addBox(group, t * 0.9, sideH - 0.004, d - backT - 0.024, primaryMat, 0, sideCy, 0.002);
+    // Center vertical divider for 2-bay credenza OR wide TV console interior
+    if (bays === 2 || w > 1.55) {
+      addBox(group, t * 0.85, sideH - 0.004, innerD, primaryMat, 0, sideCy, -0.008);
     }
 
     // Interior shelves & Renton-authentic contents (books, ceramic bowls, stacked dark-blue KUGGIS boxes!)
@@ -699,6 +698,13 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
           addDisplayBowls(group, sy1, bayCx + bayW * 0.2, -0.01, 2);
           addDisplayBowls(group, sy2, bayCx - bayW * 0.18, -0.01, 1);
           addShelfBooks(group, bayW * 0.44, sy2, innerD, bayCx + bayW * 0.2, -0.01, 5, 5);
+        } else if (h < 0.65) {
+          // Low 21⅝" TV media unit: low-profile dark-blue KUGGIS organizers inside
+          const sy1 = plinthH + t + 0.002;
+          const kw = Math.min(0.28, innerW * 0.18);
+          const kd = Math.min(0.28, innerD * 0.78);
+          addKuggisBox(group, kw, 0.11, kd, -innerW * 0.26, sy1 + 0.056, 0.0);
+          addKuggisBox(group, kw, 0.11, kd, innerW * 0.26, sy1 + 0.056, 0.0);
         } else {
           // Lower base cabinet (35⅜" H): dark-blue KUGGIS boxes stacked on bottom & shelf (exact Renton photo-5!)
           const sy1 = plinthH + t + 0.002;
@@ -1206,11 +1212,13 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
       const doorH = h - 0.095;
       const doorCy = 0.085 + doorH / 2;
       const bayW = w / bays;
+      const isSingleDoor = !!catalogEntry.singleDoor || w < 0.46;
       for (let b = 0; b < bays; b++) {
         const bayCx = bays === 1 ? 0 : (b === 0 ? -w / 4 : w / 4);
-        const dw = bayW / 2 - 0.006;
-        for (const side of ['left', 'right']) {
-          const dcx = side === 'left' ? bayCx - dw / 2 - 0.002 : bayCx + dw / 2 + 0.002;
+        const dw = isSingleDoor ? bayW - 0.008 : bayW / 2 - 0.006;
+        const sides = isSingleDoor ? ['left'] : ['left', 'right'];
+        for (const side of sides) {
+          const dcx = isSingleDoor ? bayCx : (side === 'left' ? bayCx - dw / 2 - 0.002 : bayCx + dw / 2 + 0.002);
           if (style === 'oxberg_half_glass') {
             // Solid Shaker lower 42% + framed glass upper 58%
             const pivot = new THREE.Group();
