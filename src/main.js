@@ -94,6 +94,7 @@ const state = {
   showDimensions: true,
   closetOpen: true,
   entryDoorOpen: true,
+  cabinetDoorsOpen: false,
   activeCategory: 'all',
   searchQuery: '',
   retainedDeskId: 'retained_wood_desk',
@@ -468,6 +469,8 @@ function loadItemsList(rawItems, saveUndo = false) {
   meshByUid.clear();
   state.items = rawItems.map((it) => {
     const cat = ALL_CATALOG[it.catalogId];
+    const hasFronts = !!(cat && FRONT_STYLES[cat.meshType]);
+    const doorsOpen = it.doorsOpen !== undefined ? !!it.doorsOpen : (hasFronts && !!state.cabinetDoorsOpen);
     return {
       uid: it.uid || nextUid(),
       catalogId: it.catalogId,
@@ -479,7 +482,7 @@ function loadItemsList(rawItems, saveUndo = false) {
       ...(it.frontStyle || cat?.defaultFrontStyle ? { frontStyle: it.frontStyle || cat?.defaultFrontStyle } : {}),
       ...(it.frontFinish ? { frontFinish: it.frontFinish } : {}),
       ...(it.hardware ? { hardware: it.hardware } : {}),
-      ...(it.doorsOpen ? { doorsOpen: true } : {}),
+      ...(doorsOpen ? { doorsOpen: true } : {}),
       ...(cat?.wallMounted ? { mountHeightIn: it.mountHeightIn ?? cat.mountHeightIn ?? 54 } : {}),
     };
   });
@@ -497,6 +500,56 @@ function loadItemsList(rawItems, saveUndo = false) {
   updateInspector();
   updateCartBadge();
   updateLeftRail();
+  syncCabinetDoorsCheckbox();
+  saveToStorage();
+}
+
+function syncCabinetDoorsCheckbox() {
+  const chk = document.getElementById('chk-cabinets');
+  if (!chk) return;
+  const cabs = state.items.filter((it) => {
+    const c = ALL_CATALOG[it.catalogId];
+    return c && FRONT_STYLES[c.meshType];
+  });
+  if (cabs.length === 0) {
+    chk.indeterminate = false;
+    chk.checked = !!state.cabinetDoorsOpen;
+    return;
+  }
+  const openCount = cabs.filter((it) => !!it.doorsOpen).length;
+  if (openCount === 0) {
+    chk.indeterminate = false;
+    chk.checked = false;
+    state.cabinetDoorsOpen = false;
+  } else if (openCount === cabs.length) {
+    chk.indeterminate = false;
+    chk.checked = true;
+    state.cabinetDoorsOpen = true;
+  } else {
+    chk.checked = false;
+    chk.indeterminate = true;
+  }
+}
+
+function setAllCabinetDoorsOpen(open, saveUndo = false) {
+  state.cabinetDoorsOpen = !!open;
+  let changed = false;
+  for (const item of state.items) {
+    const cat = ALL_CATALOG[item.catalogId];
+    if (!cat || !FRONT_STYLES[cat.meshType]) continue;
+    if (!!item.doorsOpen !== state.cabinetDoorsOpen) {
+      if (!changed && saveUndo) pushUndoSnapshot();
+      changed = true;
+      item.doorsOpen = state.cabinetDoorsOpen;
+      syncItemMesh(item, false);
+    }
+  }
+  syncCabinetDoorsCheckbox();
+  if (changed) {
+    revalidateAllItems();
+    updateInspector();
+  }
+  invalidateFisheye();
   saveToStorage();
 }
 
@@ -852,6 +905,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
       expanded: false,
       ...(placeCat?.defaultFrontStyle ? { frontStyle: placeCat.defaultFrontStyle } : {}),
       ...(placeCat?.wallMounted ? { mountHeightIn: placeCat.mountHeightIn || 54 } : {}),
+      ...(state.cabinetDoorsOpen && placeCat && FRONT_STYLES[placeCat.meshType] ? { doorsOpen: true } : {}),
     };
     state.items.push(newItem);
     syncItemMesh(newItem, true);
@@ -860,6 +914,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
     updateInspector();
     updateCartBadge();
     updateLeftRail();
+    syncCabinetDoorsCheckbox();
     saveToStorage();
     if (!e.shiftKey) {
       clearGhost();
@@ -2004,6 +2059,7 @@ function updateInspector() {
         syncItemMesh(item, false);
         revalidateAllItems();
         updateInspector();
+        syncCabinetDoorsCheckbox();
         saveToStorage();
       };
     }
@@ -2721,6 +2777,7 @@ function applyFullConfiguration(config, saveUndo = true, opts = {}) {
   state.wallSnap = s.wallSnap !== false;
   state.closetOpen = s.closetOpen !== false;
   state.entryDoorOpen = s.entryDoorOpen !== false;
+  state.cabinetDoorsOpen = !!s.cabinetDoorsOpen;
 
   const setChk = (id, val) => {
     const el = document.getElementById(id);
@@ -2732,6 +2789,7 @@ function applyFullConfiguration(config, saveUndo = true, opts = {}) {
   setChk('chk-wallsnap', state.wallSnap);
   setChk('chk-closet', state.closetOpen);
   setChk('chk-door', state.entryDoorOpen);
+  setChk('chk-cabinets', state.cabinetDoorsOpen);
 
   if (s.wallMode && ['cutaway', 'up', 'down'].includes(s.wallMode)) {
     setWallMode(s.wallMode);
@@ -2997,6 +3055,9 @@ function initUI() {
     if (roomObj) roomObj.setEntryDoorOpen(state.entryDoorOpen ? 0.9 : 0.04);
     invalidateFisheye();
     saveToStorage();
+  };
+  document.getElementById('chk-cabinets').onchange = (e) => {
+    setAllCabinetDoorsOpen(e.target.checked, true);
   };
 
   // Eye-Level Fisheye / Panini / Stereographic Lens HUD Controls

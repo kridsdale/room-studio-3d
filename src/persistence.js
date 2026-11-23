@@ -147,6 +147,7 @@ export function buildConfigSnapshot(state, name = 'Current Configuration', budge
       wallSnap: state.wallSnap !== false,
       closetOpen: state.closetOpen !== false,
       entryDoorOpen: state.entryDoorOpen !== false,
+      cabinetDoorsOpen: !!state.cabinetDoorsOpen,
       budgetCap: clampNum(budgetCap, 0, 50000, 1200),
     },
   };
@@ -273,6 +274,7 @@ export function validateAndNormalizeConfig(raw, allCatalog, defaultRoom) {
     wallSnap: s.wallSnap !== false,
     closetOpen: s.closetOpen !== false,
     entryDoorOpen: s.entryDoorOpen !== false,
+    cabinetDoorsOpen: !!s.cabinetDoorsOpen,
     budgetCap: clampNum(s.budgetCap, 0, 50000, 1200),
   };
 
