@@ -35,7 +35,10 @@ import {
   clearStoredApiKey,
   testGeminiApiKey,
 } from './keyVault.js';
-import { FisheyeLensRig } from './fisheyeLens.js';
+import { FisheyeLensRig, LENS_MODES } from './fisheyeLens.js';
+import { buildRTScene } from './rtScene.js';
+import { GPURayTracer } from './gpuRayTracer.js';
+import { CPU_PHOTO_PRESETS, renderCPUPBRPhoto } from './cpuPathTracer.js';
 import { searchLiveRentonInventory } from './rentonLookup.js';
 import {
   AUTO_STATE_KEY,
@@ -106,6 +109,10 @@ const state = {
   measureEnd: null,
   optimizerGoal: 'dual_office',
   lastArchetypeId: null,
+  renderMode: 'raster',       // 'raster' | 'rt' (GPU WebGPU/WebGL2 Path Tracing)
+  photoMode: false,           // Clean viewfinder hiding all UI (Key: P)
+  photoEngine: 'cpu_pbr',     // 'cpu_pbr' | 'gpu_instant'
+  photoPreset: 'fast',        // 'preview' | 'fast' | 'hd' | 'ultra'
   undoStack: [],
 };
 
@@ -220,16 +227,166 @@ const fisheyeRig = hasWebGL
       projectPoint: () => null,
     };
 
+// Dual-Backend Progressive GPU Ray Tracer (WebGPU WGSL Compute + WebGL2 Float-Texture Fallback)
+const gpuRayTracer = hasWebGL ? new GPURayTracer(renderer, viewport) : null;
+let rtInitPromise = null;
+let rtSceneCache = null;
+let rtSceneDirty = true;
+let lastWallVisMask = -1;
+let lastRtStatusUpdate = 0;
+
+function markRTSceneDirty() {
+  rtSceneDirty = true;
+  if (gpuRayTracer) gpuRayTracer.resetAccumulation();
+}
+
+let photoLensMode = 'rectilinear';
+
+function getActiveLensConfig() {
+  const effectiveLens = state.photoMode
+    ? photoLensMode
+    : state.viewMode === 'fp'
+    ? state.fisheyeMode
+    : 'rectilinear';
+  if (effectiveLens === 'rectilinear') {
+    return { active: false, modeInt: -1, modeName: 'Rectilinear', hFovDeg: camera.fov };
+  }
+  const modeInt = LENS_MODES[effectiveLens] ?? 0;
+  const names = { equidistant: 'RT Fisheye', panini: 'RT Panini', stereographic: 'RT Stereo' };
+  return {
+    active: true,
+    modeInt,
+    modeName: names[effectiveLens] || 'RT Fisheye',
+    hFovDeg: state.fisheyeFovDeg || 138,
+  };
+}
+
+function ensureRTSceneUpToDate() {
+  if (!rtSceneDirty && rtSceneCache) return rtSceneCache;
+  if (roomObj) {
+    lastWallVisMask = roomObj.updateWallVisibility(
+      state.wallMode,
+      camera.position,
+      state.viewMode === 'fp'
+    );
+  }
+  const roots = [];
+  if (roomObj?.root) roots.push(roomObj.root);
+  roots.push(furnitureRoot);
+  rtSceneCache = buildRTScene(roots, state.room, state.lightingMood, state.wallMode);
+  rtSceneDirty = false;
+  if (gpuRayTracer && (gpuRayTracer.backend === 'webgpu' || gpuRayTracer.backend === 'webgl2')) {
+    gpuRayTracer.uploadScene(rtSceneCache);
+  }
+  return rtSceneCache;
+}
+
+function updateRTStatusPill(force = false) {
+  const pill = document.getElementById('rt-status-pill');
+  if (!pill) return;
+  const show = state.renderMode === 'rt' && !state.photoMode;
+  pill.classList.toggle('hidden', !show);
+  if (!show || !gpuRayTracer) return;
+  const now = performance.now();
+  if (!force && now - lastRtStatusUpdate < 160) return;
+  lastRtStatusUpdate = now;
+
+  const st = gpuRayTracer.getStats();
+  const lens = getActiveLensConfig();
+  const backendLabel =
+    st.backend === 'webgpu'
+      ? 'WebGPU RT'
+      : st.backend === 'webgl2'
+      ? 'WebGL2 RT'
+      : 'GPU RT';
+  const lensTag = lens.active ? ` · ${lens.modeName} ${lens.hFovDeg}°` : '';
+  const trisK = st.triCount ? ` · ${(st.triCount / 1000).toFixed(1)}k tris` : '';
+  const txtEl = document.getElementById('rt-status-text');
+  const dotEl = document.getElementById('rt-status-dot');
+  if (txtEl) {
+    txtEl.textContent = `${backendLabel} · ${st.samples}/${st.targetSamples} spp${lensTag}${trisK}`;
+  }
+  if (dotEl) {
+    dotEl.classList.toggle('converged', st.samples >= st.targetSamples);
+  }
+}
+
+function syncRTButtonsUI() {
+  const isRT = state.renderMode === 'rt';
+  const topBtn = document.getElementById('btn-rt-toggle');
+  if (topBtn) {
+    topBtn.classList.toggle('active', isRT);
+    topBtn.textContent = isRT ? '✦ RT: ON' : '✦ RT';
+  }
+  const popBtn = document.getElementById('pop-rt-btn');
+  if (popBtn) {
+    popBtn.classList.toggle('active', isRT);
+    popBtn.textContent = isRT ? '✦ GPU RT: ON' : '✦ GPU RT: Off';
+  }
+  const photoRtBtn = document.getElementById('photo-rt-btn');
+  if (photoRtBtn) {
+    photoRtBtn.classList.toggle('active', isRT);
+    photoRtBtn.textContent = isRT ? '✦ GPU RT: ON' : '✦ GPU RT: Off';
+  }
+  updateRTStatusPill(true);
+}
+
+async function setRenderMode(mode) {
+  const next = mode === 'rt' ? 'rt' : 'raster';
+  if (!hasWebGL || !gpuRayTracer) {
+    state.renderMode = 'raster';
+    syncRTButtonsUI();
+    return;
+  }
+  if (next === 'rt') {
+    if (gpuRayTracer.backend === 'uninitialized') {
+      if (!rtInitPromise) rtInitPromise = gpuRayTracer.init();
+      await rtInitPromise;
+    }
+    if (gpuRayTracer.backend === 'unavailable') {
+      showPhotoToast('GPU Ray Tracing requires WebGPU or WebGL2.');
+      state.renderMode = 'raster';
+      syncRTButtonsUI();
+      return;
+    }
+    state.renderMode = 'rt';
+    rtSceneDirty = true;
+    ensureRTSceneUpToDate();
+    gpuRayTracer.setVisible(true);
+    syncRTButtonsUI();
+  } else {
+    state.renderMode = 'raster';
+    gpuRayTracer.setVisible(false);
+    syncRTButtonsUI();
+    invalidateFisheye();
+    renderActiveView(true);
+  }
+}
+
+function toggleRenderMode() {
+  return setRenderMode(state.renderMode === 'rt' ? 'raster' : 'rt');
+}
+
 function isFisheyeActive() {
-  return hasWebGL && state.viewMode === 'fp' && fisheyeRig.isActive();
+  return hasWebGL && getActiveLensConfig().active && fisheyeRig.isActive();
 }
 
 function invalidateFisheye() {
   if (hasWebGL) fisheyeRig.invalidate();
+  if (gpuRayTracer && state.renderMode === 'rt') {
+    gpuRayTracer.resetAccumulation();
+  }
 }
 
 function renderActiveView(forceCubemap = false) {
   if (!hasWebGL) return;
+  if (activeCPURenderJob) return;
+  if (state.renderMode === 'rt' && gpuRayTracer && gpuRayTracer.active) {
+    ensureRTSceneUpToDate();
+    gpuRayTracer.renderFrame(camera, window.innerWidth, window.innerHeight, getActiveLensConfig());
+    updateRTStatusPill(false);
+    return;
+  }
   if (isFisheyeActive()) {
     fisheyeRig.render(renderer, scene, camera, window.innerWidth, window.innerHeight, forceCubemap);
   } else {
@@ -316,6 +473,7 @@ function rebuildRoomArchitecture() {
   );
   updateRoomMetaHeader();
   revalidateAllItems();
+  markRTSceneDirty();
 }
 
 function updateFurnitureLampLights() {
@@ -355,11 +513,14 @@ function applyLightingMood() {
   if (b1) b1.textContent = label;
   if (b2) b2.textContent = label;
   invalidateFisheye();
+  markRTSceneDirty();
 }
 
 // ======================== FURNITURE MANAGEMENT ========================
 function createFootprintOutline(wM, dM, colorHex) {
   const g = new THREE.Group();
+  g.name = 'ItemFootprint';
+  g.userData.isFootprint = true;
   const plane = new THREE.Mesh(
     new THREE.PlaneGeometry(wM + 0.04, dM + 0.04),
     new THREE.MeshBasicMaterial({
@@ -447,6 +608,7 @@ function syncItemMesh(item, animatePop = false) {
     popStart: animatePop ? performance.now() : null,
   });
   updateFurnitureLampLights();
+  markRTSceneDirty();
 }
 
 function pushUndoSnapshot() {
@@ -986,6 +1148,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
     const entry = meshByUid.get(draggingItem.uid);
     if (entry) {
       entry.group.position.set(snapped.x * IN_TO_M, 0, snapped.z * IN_TO_M);
+      markRTSceneDirty();
     }
     revalidateAllItems();
     updateInspector();
@@ -1040,6 +1203,7 @@ function nudgeSelected(dxIn, dzIn) {
   const entry = meshByUid.get(item.uid);
   if (entry) {
     entry.group.position.set(item.x * IN_TO_M, 0, item.z * IN_TO_M);
+    markRTSceneDirty();
   }
   revalidateAllItems();
   updateInspector();
@@ -1055,8 +1219,17 @@ window.addEventListener('keydown', (e) => {
 
   const key = e.key.toLowerCase();
 
-  // Escape always closes open modals / popovers first!
+  // Escape always closes open modals / popovers / Photo Mode first!
   if (key === 'escape') {
+    const photoModal = document.getElementById('photo-render-modal');
+    if (photoModal && !photoModal.classList.contains('hidden')) {
+      cancelAndCloseCPURenderModal();
+      return;
+    }
+    if (state.photoMode) {
+      setPhotoMode(false);
+      return;
+    }
     const cartModal = document.getElementById('cart-modal');
     const calibModal = document.getElementById('calib-modal');
     const configModal = document.getElementById('config-modal');
@@ -1106,8 +1279,27 @@ window.addEventListener('keydown', (e) => {
 
   if (isTextInput) return;
 
+  // Photo Mode Toggle (P) and Shutter Snap (Space while in Photo Mode)
+  if (key === 'p' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const photoModal = document.getElementById('photo-render-modal');
+    if (!photoModal || photoModal.classList.contains('hidden')) {
+      e.preventDefault();
+      togglePhotoMode();
+      return;
+    }
+  }
+  if ((e.code === 'Space' || e.key === ' ') && state.photoMode && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const photoModal = document.getElementById('photo-render-modal');
+    if (!photoModal || photoModal.classList.contains('hidden')) {
+      e.preventDefault();
+      snapPhoto();
+      return;
+    }
+  }
+
   if (e.key === '/') {
     e.preventDefault();
+    if (state.photoMode) setPhotoMode(false);
     openAgentPanel(true);
     return;
   }
@@ -1226,6 +1418,7 @@ function setSelectedRotation(newDeg, recordUndo = false) {
   if (entry) {
     entry.group.position.set(item.x * IN_TO_M, 0, item.z * IN_TO_M);
     entry.group.rotation.y = (item.rotDeg * Math.PI) / 180;
+    markRTSceneDirty();
   }
   revalidateAllItems();
   updateInspector();
@@ -1243,6 +1436,7 @@ function deleteItemByUid(uid, saveUndo = true) {
   }
   state.items = state.items.filter((i) => i.uid !== uid);
   if (state.selectedUid === uid) state.selectedUid = null;
+  markRTSceneDirty();
   revalidateAllItems();
   updateInspector();
   updateCartBadge();
@@ -1466,6 +1660,7 @@ function jumpToEyeVantage(vantageId, instant = false) {
 
 function setFisheyeMode(lensMode) {
   state.fisheyeMode = lensMode;
+  if (state.viewMode === 'fp') photoLensMode = lensMode;
   fisheyeRig.setMode(lensMode);
   document.querySelectorAll('[data-lens]').forEach((b) => {
     b.classList.toggle('active', b.dataset.lens === lensMode);
@@ -1480,6 +1675,7 @@ function setFisheyeMode(lensMode) {
     }
     invalidateFisheye();
   }
+  syncPhotoHudControls();
 }
 
 function setFisheyeFovDeg(deg) {
@@ -1490,6 +1686,11 @@ function setFisheyeFovDeg(deg) {
   const valEl = document.getElementById('fisheye-fov-val');
   if (slider) slider.value = String(clamped);
   if (valEl) valEl.textContent = `${clamped}°`;
+  const pSlider = document.getElementById('photo-fov-slider');
+  const pVal = document.getElementById('photo-fov-val');
+  if (pSlider) pSlider.value = String(clamped);
+  if (pVal) pVal.textContent = `${clamped}°`;
+  invalidateFisheye();
 }
 
 function setCameraView(mode) {
@@ -1573,6 +1774,7 @@ function setWallMode(mode) {
     b.classList.toggle('active', b.dataset.wall === mode);
   });
   invalidateFisheye();
+  markRTSceneDirty();
 }
 
 // ======================== FLOATING 3D LABELS ========================
@@ -2990,6 +3192,24 @@ function initUI() {
   document.getElementById('btn-units').onclick = toggleUnits;
   document.getElementById('pop-units-btn').onclick = toggleUnits;
 
+  // GPU Ray Tracing & Photo Mode
+  document.getElementById('btn-rt-toggle')?.addEventListener('click', () => toggleRenderMode());
+  document.getElementById('pop-rt-btn')?.addEventListener('click', () => {
+    toggleRenderMode();
+    document.getElementById('more-popover')?.classList.add('hidden');
+  });
+  document.getElementById('btn-photo-mode')?.addEventListener('click', () => togglePhotoMode());
+  document.getElementById('pop-photo-btn')?.addEventListener('click', () => {
+    document.getElementById('more-popover')?.classList.add('hidden');
+    togglePhotoMode();
+  });
+  document.getElementById('rt-retrace-btn')?.addEventListener('click', () => {
+    markRTSceneDirty();
+    ensureRTSceneUpToDate();
+    updateRTStatusPill(true);
+  });
+  initPhotoModeUI();
+
   // Tape Measure & Undo
   document.getElementById('btn-measure').onclick = toggleMeasureMode;
   document.getElementById('btn-undo').onclick = undo;
@@ -3050,12 +3270,14 @@ function initUI() {
     state.closetOpen = e.target.checked;
     if (roomObj) roomObj.setClosetOpen(state.closetOpen ? 0.82 : 0.02);
     invalidateFisheye();
+    markRTSceneDirty();
     saveToStorage();
   };
   document.getElementById('chk-door').onchange = (e) => {
     state.entryDoorOpen = e.target.checked;
     if (roomObj) roomObj.setEntryDoorOpen(state.entryDoorOpen ? 0.9 : 0.04);
     invalidateFisheye();
+    markRTSceneDirty();
     saveToStorage();
   };
   document.getElementById('chk-cabinets').onchange = (e) => {
@@ -4267,11 +4489,382 @@ function initRentonLookupUI() {
   }
 }
 
+// ======================== PHOTO MODE & CPU PBR SHUTTER ========================
+let photoSaveDirHandle = null;
+let activeCPURenderJob = null;
+let lastRenderedPhotoBlob = null;
+let lastRenderedPhotoName = '';
+let photoToastTimer = null;
+
+function showPhotoToast(msg, durationMs = 3400) {
+  const el = document.getElementById('photo-toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  if (photoToastTimer) clearTimeout(photoToastTimer);
+  photoToastTimer = setTimeout(() => {
+    el.classList.add('hidden');
+  }, durationMs);
+}
+
+function triggerShutterFlash() {
+  const el = document.getElementById('shutter-flash');
+  if (!el) return;
+  el.classList.add('active');
+  requestAnimationFrame(() => {
+    setTimeout(() => el.classList.remove('active'), 45);
+  });
+}
+
+function buildPhotoFilename(tag) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `room-studio-${tag}-${stamp}.png`;
+}
+
+async function savePhotoBlob(blob, filename) {
+  // 1. If the user selected Desktop (or any custom folder) via File System Access API, write straight to disk!
+  if (photoSaveDirHandle && typeof photoSaveDirHandle.getFileHandle === 'function') {
+    try {
+      const fh = await photoSaveDirHandle.getFileHandle(filename, { create: true });
+      const writable = await fh.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      showPhotoToast(`Saved ${filename} → ${photoSaveDirHandle.name}/ ✓`, 4000);
+      return true;
+    } catch (err) {
+      console.warn('Direct folder save failed, falling back to browser Downloads:', err?.message || err);
+    }
+  }
+
+  // 2. Standard zero-friction download straight to the user's Downloads folder
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  showPhotoToast(`Saved ${filename} → Downloads ✓`, 3800);
+  return true;
+}
+
+async function pickPhotoSaveFolder() {
+  const btn = document.getElementById('photo-folder-btn');
+  if (typeof window.showDirectoryPicker !== 'function') {
+    showPhotoToast('Photos auto-save directly to your Downloads folder.', 3000);
+    return;
+  }
+  try {
+    const dir = await window.showDirectoryPicker({
+      id: 'room-studio-photos',
+      mode: 'readwrite',
+      startIn: 'desktop',
+    });
+    if (dir) {
+      photoSaveDirHandle = dir;
+      if (btn) {
+        btn.textContent = `📁 ${dir.name}`;
+        btn.classList.add('active');
+      }
+      showPhotoToast(`Save folder set to "${dir.name}/" ✓`, 3000);
+    }
+  } catch (err) {
+    if (err?.name !== 'AbortError') {
+      showPhotoToast('Using Downloads folder for photo saves.', 2600);
+    }
+  }
+}
+
+function syncPhotoHudControls() {
+  const lensSel = document.getElementById('photo-lens-select');
+  const fovWrap = document.getElementById('photo-fov-wrap');
+  const fovSlider = document.getElementById('photo-fov-slider');
+  const fovVal = document.getElementById('photo-fov-val');
+  const engSel = document.getElementById('photo-engine-select');
+  const preSel = document.getElementById('photo-preset-select');
+
+  if (lensSel) lensSel.value = photoLensMode;
+  if (fovWrap) fovWrap.classList.toggle('hidden', photoLensMode === 'rectilinear');
+  if (fovSlider) fovSlider.value = String(state.fisheyeFovDeg || 138);
+  if (fovVal) fovVal.textContent = `${state.fisheyeFovDeg || 138}°`;
+  if (engSel) engSel.value = state.photoEngine;
+  if (preSel) {
+    preSel.value = state.photoPreset;
+    preSel.style.display = state.photoEngine === 'cpu_pbr' ? '' : 'none';
+  }
+  syncRTButtonsUI();
+}
+
+function setPhotoMode(enabled) {
+  const next = !!enabled;
+  if (state.photoMode === next) return;
+  state.photoMode = next;
+
+  document.body.classList.toggle('photo-mode', next);
+  document.getElementById('btn-photo-mode')?.classList.toggle('active', next);
+  document.getElementById('photo-hud')?.classList.toggle('hidden', !next);
+
+  if (next) {
+    clearGhost();
+    if (state.measureMode) stopMeasureMode();
+    document.getElementById('more-popover')?.classList.add('hidden');
+
+    // Keep exact current camera framing: Eye mode retains its curvilinear lens; 3D/2D starts Rectilinear
+    photoLensMode = state.viewMode === 'fp' ? state.fisheyeMode : 'rectilinear';
+    fisheyeRig.setMode(photoLensMode);
+
+    // Hide all 3D editor helpers & overlays for a clean studio photograph
+    if (roomObj) {
+      roomObj.gridGroup.visible = false;
+      roomObj.clearanceGroup.visible = false;
+    }
+    guidesGroup.visible = false;
+    tapeGroup.visible = false;
+    for (const [, entry] of meshByUid) {
+      if (entry.footprint) entry.footprint.visible = false;
+    }
+
+    syncPhotoHudControls();
+    invalidateFisheye();
+    showPhotoToast('Photo Mode · Press Space to snap · Press P or Esc to exit', 2600);
+  } else {
+    // Restore 3D overlays and editor UI cleanly
+    fisheyeRig.setMode(state.fisheyeMode);
+    if (roomObj) {
+      roomObj.gridGroup.visible = state.showGrid;
+      roomObj.clearanceGroup.visible = state.showClearances;
+    }
+    guidesGroup.visible = true;
+    tapeGroup.visible = true;
+    revalidateAllItems();
+    syncRTButtonsUI();
+    invalidateFisheye();
+  }
+}
+
+function togglePhotoMode() {
+  setPhotoMode(!state.photoMode);
+}
+
+function cancelAndCloseCPURenderModal() {
+  if (activeCPURenderJob) {
+    activeCPURenderJob.cancel();
+    activeCPURenderJob = null;
+  }
+  document.getElementById('photo-render-modal')?.classList.add('hidden');
+}
+
+function buildCameraRayState(lensCfg) {
+  camera.updateMatrixWorld();
+  const camRight = new THREE.Vector3();
+  const camUp = new THREE.Vector3();
+  const camBack = new THREE.Vector3();
+  camera.matrixWorld.extractBasis(camRight, camUp, camBack);
+  const camForward = camBack.clone().negate().normalize();
+  camRight.normalize();
+  camUp.normalize();
+
+  const lensMode = lensCfg.active ? lensCfg.modeInt : -1;
+  const halfFovVal =
+    lensMode >= 0
+      ? THREE.MathUtils.degToRad((lensCfg.hFovDeg || 138) * 0.5)
+      : Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
+
+  return {
+    pos: [camera.position.x, camera.position.y, camera.position.z],
+    right: [camRight.x, camRight.y, camRight.z],
+    up: [camUp.x, camUp.y, camUp.z],
+    forward: [camForward.x, camForward.y, camForward.z],
+    lensMode,
+    halfFovVal,
+  };
+}
+
+async function snapPhoto() {
+  if (!hasWebGL) return;
+  const lensCfg = getActiveLensConfig();
+
+  // Option A: Instant GPU Capture (saves current GPU RT canvas or clean Raster/Fisheye canvas immediately!)
+  if (state.photoEngine === 'gpu_instant') {
+    triggerShutterFlash();
+    let dataUrl = null;
+    if (state.renderMode === 'rt' && gpuRayTracer && gpuRayTracer.active) {
+      dataUrl = gpuRayTracer.captureCanvasDataURL();
+    } else {
+      renderActiveView(true);
+      dataUrl = renderer.domElement.toDataURL('image/png');
+    }
+    if (!dataUrl) {
+      showPhotoToast('Capture failed — canvas unavailable.', 2800);
+      return;
+    }
+    const resp = await fetch(dataUrl);
+    const blob = await resp.blob();
+    const tag = state.renderMode === 'rt' ? 'gpu-rt' : 'gpu-raster';
+    await savePhotoBlob(blob, buildPhotoFilename(tag));
+    return;
+  }
+
+  // Option B: Multi-Core CPU Physically Based Path Tracing with live tile-by-tile preview!
+  const preset = CPU_PHOTO_PRESETS[state.photoPreset] || CPU_PHOTO_PRESETS.fast;
+  const modal = document.getElementById('photo-render-modal');
+  const canvas = document.getElementById('cpu-pbr-canvas');
+  const titleEl = document.getElementById('cpu-pbr-title');
+  const metaEl = document.getElementById('cpu-pbr-meta');
+  const fillEl = document.getElementById('cpu-pbr-progress-fill');
+  const lblEl = document.getElementById('cpu-pbr-progress-label');
+  const cancelBtn = document.getElementById('cpu-pbr-cancel-btn');
+  const saveBtn = document.getElementById('cpu-pbr-save-btn');
+  const doneBtn = document.getElementById('cpu-pbr-done-btn');
+
+  if (!modal || !canvas) return;
+  if (activeCPURenderJob) {
+    activeCPURenderJob.cancel();
+    activeCPURenderJob = null;
+  }
+
+  canvas.width = preset.width;
+  canvas.height = preset.height;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#0b1120';
+  ctx.fillRect(0, 0, preset.width, preset.height);
+
+  modal.classList.remove('hidden');
+  if (titleEl) titleEl.textContent = 'CPU PBR Path Tracing…';
+  if (metaEl) {
+    metaEl.textContent = `${preset.width}×${preset.height} · ${preset.spp} spp · ${lensCfg.modeName}${lensCfg.active ? ` ${lensCfg.hFovDeg}°` : ''} · Building BVH…`;
+  }
+  if (fillEl) fillEl.style.width = '0%';
+  if (lblEl) lblEl.textContent = '0% · Preparing BVH & multi-core workers…';
+  cancelBtn?.classList.remove('hidden');
+  saveBtn?.classList.add('hidden');
+  doneBtn?.classList.add('hidden');
+
+  // Rebuild BVH cleanly with latest room walls & furniture
+  rtSceneDirty = true;
+  const rtScene = ensureRTSceneUpToDate();
+  const camState = buildCameraRayState(lensCfg);
+
+  if (metaEl) {
+    metaEl.textContent = `${preset.width}×${preset.height} · ${preset.spp} spp · ${lensCfg.modeName}${lensCfg.active ? ` ${lensCfg.hFovDeg}°` : ''} · ${(rtScene.triCount / 1000).toFixed(1)}k tris`;
+  }
+
+  activeCPURenderJob = renderCPUPBRPhoto(
+    rtScene,
+    camState,
+    { width: preset.width, height: preset.height, spp: preset.spp, tileSize: 48 },
+    {
+      onTile(x, y, w, h, rgba) {
+        const imgData = new ImageData(rgba, w, h);
+        ctx.putImageData(imgData, x, y);
+      },
+      onProgress({ pct, doneTiles, totalTiles, threads, elapsedMs }) {
+        if (fillEl) fillEl.style.width = `${pct}%`;
+        if (lblEl) {
+          lblEl.textContent = `${pct}% · ${doneTiles}/${totalTiles} tiles · ${threads} CPU ${threads === 1 ? 'thread' : 'threads'} · ${(elapsedMs / 1000).toFixed(1)}s`;
+        }
+      },
+    }
+  );
+
+  const result = await activeCPURenderJob.promise;
+  activeCPURenderJob = null;
+  if (result.cancelled) return;
+
+  triggerShutterFlash();
+  if (titleEl) titleEl.textContent = 'CPU PBR Render Complete ✓';
+  if (fillEl) fillEl.style.width = '100%';
+  if (lblEl) {
+    lblEl.textContent = `100% · Rendered in ${(result.elapsedMs / 1000).toFixed(2)}s across ${result.threads} CPU ${result.threads === 1 ? 'thread' : 'threads'}`;
+  }
+  cancelBtn?.classList.add('hidden');
+  saveBtn?.classList.remove('hidden');
+  doneBtn?.classList.remove('hidden');
+
+  const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
+  if (blob) {
+    const lensSlug = lensCfg.active ? state.fisheyeMode : 'rect';
+    lastRenderedPhotoBlob = blob;
+    lastRenderedPhotoName = buildPhotoFilename(`cpu-pbr-${lensSlug}`);
+    await savePhotoBlob(blob, lastRenderedPhotoName);
+  }
+}
+
+function initPhotoModeUI() {
+  document.getElementById('photo-rt-btn')?.addEventListener('click', (e) => {
+    toggleRenderMode();
+    e.currentTarget.blur();
+  });
+
+  const lensSel = document.getElementById('photo-lens-select');
+  if (lensSel) {
+    lensSel.addEventListener('change', (e) => {
+      photoLensMode = e.target.value;
+      fisheyeRig.setMode(photoLensMode);
+      if (state.viewMode === 'fp') {
+        state.fisheyeMode = photoLensMode;
+        document.querySelectorAll('[data-lens]').forEach((b) => {
+          b.classList.toggle('active', b.dataset.lens === photoLensMode);
+        });
+      }
+      syncPhotoHudControls();
+      invalidateFisheye();
+      if (gpuRayTracer && state.renderMode === 'rt') gpuRayTracer.resetAccumulation();
+      e.target.blur();
+    });
+  }
+
+  const pFov = document.getElementById('photo-fov-slider');
+  if (pFov) {
+    pFov.addEventListener('input', (e) => setFisheyeFovDeg(e.target.value));
+    pFov.addEventListener('pointerup', () => pFov.blur());
+  }
+
+  const engSel = document.getElementById('photo-engine-select');
+  if (engSel) {
+    engSel.addEventListener('change', (e) => {
+      state.photoEngine = e.target.value;
+      syncPhotoHudControls();
+      e.target.blur();
+    });
+  }
+
+  const preSel = document.getElementById('photo-preset-select');
+  if (preSel) {
+    preSel.addEventListener('change', (e) => {
+      state.photoPreset = e.target.value;
+      e.target.blur();
+    });
+  }
+
+  document.getElementById('photo-folder-btn')?.addEventListener('click', (e) => {
+    pickPhotoSaveFolder();
+    e.currentTarget.blur();
+  });
+  document.getElementById('photo-shutter-btn')?.addEventListener('click', () => snapPhoto());
+  document.getElementById('photo-exit-btn')?.addEventListener('click', () => setPhotoMode(false));
+
+  document.getElementById('cpu-pbr-cancel-btn')?.addEventListener('click', cancelAndCloseCPURenderModal);
+  document.getElementById('cpu-pbr-close-x')?.addEventListener('click', cancelAndCloseCPURenderModal);
+  document.getElementById('cpu-pbr-done-btn')?.addEventListener('click', cancelAndCloseCPURenderModal);
+  document.getElementById('cpu-pbr-save-btn')?.addEventListener('click', async () => {
+    if (lastRenderedPhotoBlob && lastRenderedPhotoName) {
+      await savePhotoBlob(lastRenderedPhotoBlob, lastRenderedPhotoName);
+    }
+  });
+}
+
 // ======================== RENDER LOOP ========================
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if (gpuRayTracer && state.renderMode === 'rt') {
+    gpuRayTracer.resetAccumulation();
+  }
 });
 
 function animate(now) {
@@ -4309,11 +4902,17 @@ function animate(now) {
   }
 
   if (roomObj) {
-    roomObj.updateWallVisibility(state.wallMode, camera.position, state.viewMode === 'fp');
+    const mask = roomObj.updateWallVisibility(state.wallMode, camera.position, state.viewMode === 'fp');
+    if (mask !== lastWallVisMask) {
+      lastWallVisMask = mask;
+      if (state.renderMode === 'rt') markRTSceneDirty();
+    }
   }
 
   renderActiveView(anyPopping);
-  updateFloatingLabels();
+  if (!state.photoMode) {
+    updateFloatingLabels();
+  }
 }
 
 // Boot!

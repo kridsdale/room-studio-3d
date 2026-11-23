@@ -789,27 +789,34 @@ export function buildRoom(roomConfig) {
 
   function updateWallVisibility(mode, cameraPos, showCeiling = false) {
     ceilingGroup.visible = showCeiling;
+    let mask = showCeiling ? 1 : 0;
     if (mode === 'up') {
-      for (const w of wallEntries) {
+      for (let i = 0; i < wallEntries.length; i++) {
+        const w = wallEntries[i];
         w.fullGroup.visible = true;
         w.stubMesh.visible = false;
+        mask |= 1 << (i + 1);
       }
-      return;
+      return mask;
     }
     if (mode === 'down') {
-      for (const w of wallEntries) {
+      for (let i = 0; i < wallEntries.length; i++) {
+        const w = wallEntries[i];
         w.fullGroup.visible = false;
         w.stubMesh.visible = true;
       }
-      return;
+      return mask;
     }
     const toCam = new THREE.Vector3(cameraPos.x, 0, cameraPos.z).normalize();
-    for (const w of wallEntries) {
+    for (let i = 0; i < wallEntries.length; i++) {
+      const w = wallEntries[i];
       const dot = w.inwardNormal.dot(toCam);
       const cut = dot < -0.2;
       w.fullGroup.visible = !cut;
       w.stubMesh.visible = cut;
+      if (!cut) mask |= 1 << (i + 1);
     }
+    return mask;
   }
 
   function setLightingMood(mood) {

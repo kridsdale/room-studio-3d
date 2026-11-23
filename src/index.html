@@ -63,6 +63,8 @@
 
       <div class="divider-v"></div>
 
+      <button class="tool-btn rt-toggle-btn" id="btn-rt-toggle" title="Toggle GPU Path Tracing (WebGPU / WebGL2) vs Raster · Direct RT Fisheye/Panini rays">✦ RT</button>
+      <button class="tool-btn photo-mode-btn" id="btn-photo-mode" title="Photo Mode: hide all UI &amp; snap CPU PBR / GPU renders (Shortcut: P, Space to snap)">📷 Photo</button>
       <button class="tool-btn" id="btn-measure" title="Point-to-Point Tape Measure">Measure</button>
       <button class="tool-btn" id="btn-undo" title="Undo (Ctrl/Cmd + Z)">Undo</button>
       <button class="tool-btn save-inline-btn" id="btn-save-load" title="Save &amp; Load Room Configurations (Ctrl/Cmd + S)">Save</button>
@@ -92,6 +94,13 @@
       <div style="display:flex;gap:6px;">
         <button class="mini-btn" id="pop-lighting-btn">Day</button>
         <button class="mini-btn" id="pop-units-btn">ft / in</button>
+      </div>
+    </div>
+    <div class="pop-row">
+      <span class="pop-label">Rendering</span>
+      <div style="display:flex;gap:6px;">
+        <button class="mini-btn" id="pop-rt-btn">✦ GPU RT: Off</button>
+        <button class="mini-btn" id="pop-photo-btn">📷 Photo (P)</button>
       </div>
     </div>
     <div class="pop-row">
@@ -443,9 +452,92 @@
 
   <!-- Subtle Dismissible Controls Hint -->
   <div id="controls-hint" class="controls-hint">
-    <span>Drag to move · <kbd>↑↓←→</kbd> Nudge · <kbd>Alt+↑↓</kbd> Shelf / Eye Height · <kbd>R</kbd> Rotate · <kbd>/</kbd> AI Planner</span>
+    <span>Drag to move · <kbd>↑↓←→</kbd> Nudge · <kbd>Alt+↑↓</kbd> Shelf / Eye Height · <kbd>R</kbd> Rotate · <kbd>P</kbd> Photo Mode · <kbd>/</kbd> AI Planner</span>
     <button id="dismiss-hint-btn" aria-label="Dismiss hint">×</button>
   </div>
+
+  <!-- GPU Ray Tracing Live Status Pill -->
+  <div id="rt-status-pill" class="rt-status-pill hidden" role="status" aria-live="polite">
+    <span id="rt-status-dot" class="rt-status-dot"></span>
+    <span id="rt-status-text">GPU RT · 0 / 128 spp</span>
+    <button id="rt-retrace-btn" class="rt-retrace-btn" title="Rebuild BVH &amp; restart progressive path trace">↻ Re-trace</button>
+  </div>
+
+  <!-- Photo Mode Minimal Viewfinder HUD (Only visible when body.photo-mode is active · Key: P) -->
+  <div id="photo-hud" class="photo-hud hidden" role="toolbar" aria-label="Photo Mode Camera Controls">
+    <div class="photo-hud-group">
+      <button id="photo-rt-btn" class="photo-hud-pill" title="Toggle live viewport between GPU Ray Tracing and Raster">✦ GPU RT: Off</button>
+      <select id="photo-lens-select" class="photo-hud-select" aria-label="Camera lens projection">
+        <option value="rectilinear">Rectilinear</option>
+        <option value="equidistant">RT Fisheye</option>
+        <option value="panini">RT Panini (Straight Verticals)</option>
+        <option value="stereographic">RT Stereographic</option>
+      </select>
+      <div id="photo-fov-wrap" class="photo-fov-wrap hidden">
+        <input id="photo-fov-slider" type="range" min="90" max="165" step="1" value="138" aria-label="Photo Mode lens FOV" />
+        <span id="photo-fov-val">138°</span>
+      </div>
+    </div>
+
+    <div class="photo-hud-sep"></div>
+
+    <div class="photo-hud-group">
+      <select id="photo-engine-select" class="photo-hud-select" aria-label="Shutter render engine">
+        <option value="cpu_pbr">CPU PBR Path Trace</option>
+        <option value="gpu_instant">GPU Instant Capture</option>
+      </select>
+      <select id="photo-preset-select" class="photo-hud-select" aria-label="CPU PBR render quality">
+        <option value="preview">Quick · 800×450 · 8 spp + Denoise</option>
+        <option value="fast" selected>HD Fast · 1280×720 · 16 spp + Denoise</option>
+        <option value="hd">1080p Studio · 1920×1080 · 32 spp</option>
+        <option value="ultra">1440p Print · 2560×1440 · 64 spp</option>
+      </select>
+    </div>
+
+    <div class="photo-hud-sep"></div>
+
+    <div class="photo-hud-group">
+      <button id="photo-folder-btn" class="photo-hud-pill" title="Choose Desktop or custom save folder (Chrome File System Access) — defaults to Downloads">📁 Downloads</button>
+      <button id="photo-shutter-btn" class="photo-shutter-btn" title="Snap Photo (Space)">
+        <span class="photo-shutter-dot"></span>
+        <span>Snap</span>
+        <span class="photo-hud-kbd">Space</span>
+      </button>
+      <button id="photo-exit-btn" class="photo-hud-pill" title="Show UI &amp; exit Photo Mode (P or Esc)">Exit <span class="photo-hud-kbd">P</span></button>
+    </div>
+  </div>
+
+  <!-- CPU PBR Live Tile Render Preview Modal -->
+  <div id="photo-render-modal" class="photo-render-modal hidden" role="dialog" aria-modal="true" aria-label="CPU PBR Photo Render">
+    <div class="photo-render-card">
+      <div class="photo-render-head">
+        <div>
+          <h3 id="cpu-pbr-title">CPU PBR Path Tracing…</h3>
+          <div id="cpu-pbr-meta" class="photo-render-meta">Initializing multi-core workers…</div>
+        </div>
+        <button id="cpu-pbr-close-x" class="insp-close" aria-label="Close">×</button>
+      </div>
+      <div class="photo-render-canvas-wrap">
+        <canvas id="cpu-pbr-canvas" width="1280" height="720"></canvas>
+      </div>
+      <div class="photo-render-foot">
+        <div class="photo-progress-wrap">
+          <div class="photo-progress-track">
+            <div id="cpu-pbr-progress-fill" class="photo-progress-fill"></div>
+          </div>
+          <div id="cpu-pbr-progress-label" class="photo-progress-label">0% · 0 / 0 tiles</div>
+        </div>
+        <div class="photo-render-actions">
+          <button id="cpu-pbr-cancel-btn" class="action-btn danger">Cancel</button>
+          <button id="cpu-pbr-save-btn" class="action-btn primary hidden">Save PNG Again</button>
+          <button id="cpu-pbr-done-btn" class="action-btn hidden">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="shutter-flash" class="shutter-flash" aria-hidden="true"></div>
+  <div id="photo-toast" class="photo-toast hidden" role="status"></div>
 
   <!-- Bottom Sims-Style IKEA Buy Mode Dock -->
   <section id="buy-dock" class="buy-dock" aria-label="IKEA Buy Mode Catalog">
