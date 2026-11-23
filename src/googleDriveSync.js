@@ -134,6 +134,7 @@ export async function signInWithGoogleDrive(opts = {}) {
     const tokenClient = g.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: DRIVE_SCOPE,
+      include_granted_scopes: true,
       callback: (resp) => {
         if (!resp || resp.error) {
           reject(new Error(resp?.error_description || resp?.error || 'Google Sign-In canceled.'));
@@ -145,10 +146,19 @@ export async function signInWithGoogleDrive(opts = {}) {
         reject(new Error(err?.message || err?.type || 'Google Sign-In popup closed or blocked.'));
       },
     });
-    tokenClient.requestAccessToken({ prompt: opts.prompt ?? '' });
+    tokenClient.requestAccessToken({ prompt: opts.prompt ?? 'consent' });
   });
 
   const accessToken = tokenResp.access_token;
+  const grantedScopes = String(tokenResp.scope || '').split(/\s+/).filter(Boolean);
+  const hasDriveScope = grantedScopes.includes('https://www.googleapis.com/auth/drive.appdata');
+  if (!hasDriveScope) {
+    throw new Error(
+      `Google Drive appData scope was not granted (received scopes: ${grantedScopes.join(', ') || 'none'}). ` +
+      'Make sure you check the Google Drive permission box on the consent screen and add ".../auth/drive.appdata" under Google Auth Platform -> Data Access.'
+    );
+  }
+
   const expiresIn = Number(tokenResp.expires_in) || 3500;
   const expiresAt = Date.now() + Math.max(60, expiresIn - 60) * 1000;
   const user = (await fetchGoogleUserProfile(accessToken)) || {
@@ -158,7 +168,7 @@ export async function signInWithGoogleDrive(opts = {}) {
   };
   saveGoogleUserHint(user);
 
-  return { accessToken, expiresAt, user };
+  return { accessToken, expiresAt, user, grantedScopes };
 }
 
 export function signOutGoogleDrive(accessToken) {
@@ -198,7 +208,12 @@ export async function pullFromGoogleDrive(accessToken) {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) {
-    throw new Error(`Drive download failed (HTTP ${res.status})`);
+    let msg = `Drive download failed (HTTP ${res.status})`;
+    try {
+      const err = await res.json();
+      if (err?.error?.message) msg = `Drive download HTTP ${res.status}: ${err.error.message}`;
+    } catch (_) {}
+    throw new Error(msg);
   }
   const bundle = await res.json();
   return {
@@ -233,7 +248,12 @@ export async function pushToGoogleDrive(accessToken, rawBundle, knownFileId = nu
       body: jsonBody,
     });
     if (!res.ok) {
-      throw new Error(`Drive update failed (HTTP ${res.status})`);
+      let msg = `Drive update failed (HTTP ${res.status})`;
+      try {
+        const err = await res.json();
+        if (err?.error?.message) msg = `Drive update HTTP ${res.status}: ${err.error.message}`;
+      } catch (_) {}
+      throw new Error(msg);
     }
     const updated = await res.json();
     return { ok: true, fileId: updated.id || fileId, modifiedTime: updated.modifiedTime || new Date().toISOString() };

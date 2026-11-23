@@ -3071,7 +3071,7 @@ function showConfigFeedback(msg, isError = false) {
   el.textContent = msg;
   el.className = `config-feedback ${isError ? 'err' : 'ok'}`;
   clearTimeout(configFeedbackTimer);
-  configFeedbackTimer = setTimeout(() => el.classList.add('hidden'), 4500);
+  configFeedbackTimer = setTimeout(() => el.classList.add('hidden'), isError ? 15000 : 4500);
 }
 
 let renderAllSavedPlansUI = () => {};
@@ -3486,7 +3486,9 @@ function initSaveSlotsUI() {
       return true;
     } catch (err) {
       setGDriveBadge('Sync error', 'err');
-      if (!silent) showConfigFeedback(`Google Drive sync failed: ${err.message || err}`, true);
+      const errMsg = err?.message || String(err);
+      if (gMetaEl) gMetaEl.textContent = `Error: ${errMsg}`;
+      if (!silent) showConfigFeedback(`Google Drive sync failed: ${errMsg}`, true);
       return false;
     } finally {
       gdriveSession.inFlight = false;
