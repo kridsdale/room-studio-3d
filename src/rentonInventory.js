@@ -508,12 +508,11 @@ export const RENTON_LIVE_CATALOG = [
     "w": 55.1,
     "d": 29.5,
     "h": 29.5,
-    "defaultFinish": "white",
+    "defaultFinish": "oak",
     "finishes": [
-      "white",
       "oak",
-      "blackBrown",
-      "darkGrey"
+      "stainedOak",
+      "offWhite"
     ],
     "meshType": "ikea_desk",
     "subtitle": "Desk · 55 1/8x29 1/2 \"",
@@ -718,12 +717,11 @@ export const RENTON_LIVE_CATALOG = [
     "w": 47.3,
     "d": 18.5,
     "h": 29.5,
-    "defaultFinish": "white",
+    "defaultFinish": "oak",
     "finishes": [
-      "white",
       "oak",
-      "blackBrown",
-      "darkGrey"
+      "stainedOak",
+      "offWhite"
     ],
     "meshType": "ikea_desk",
     "subtitle": "Desk · 47 1/4x18 1/2 \"",
@@ -5377,12 +5375,11 @@ export const RENTON_LIVE_CATALOG = [
     "w": 66,
     "d": 83,
     "h": 39,
-    "defaultFinish": "white",
+    "defaultFinish": "offWhite",
     "finishes": [
-      "white",
+      "offWhite",
       "oak",
-      "blackBrown",
-      "darkGrey"
+      "stainedOak"
     ],
     "meshType": "bed",
     "subtitle": "Bed frame · Queen",
@@ -6873,12 +6870,11 @@ export const RENTON_LIVE_CATALOG = [
     "w": 33.1,
     "d": 32.3,
     "h": 18,
-    "defaultFinish": "beige",
+    "defaultFinish": "oak",
     "finishes": [
-      "beige",
-      "white",
       "oak",
-      "blackBrown"
+      "stainedOak",
+      "offWhite"
     ],
     "meshType": "coffee_rect",
     "subtitle": "Coffee table · 33 1/8x32 1/4 \"",
@@ -7053,12 +7049,11 @@ export const RENTON_LIVE_CATALOG = [
     "w": 15.8,
     "d": 15.8,
     "h": 23.3,
-    "defaultFinish": "beige",
+    "defaultFinish": "oak",
     "finishes": [
-      "beige",
-      "white",
       "oak",
-      "blackBrown"
+      "stainedOak",
+      "offWhite"
     ],
     "meshType": "nightstand",
     "subtitle": "Nightstand · 15 3/4x15 3/4x23 1/4 \"",

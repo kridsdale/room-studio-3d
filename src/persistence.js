@@ -320,6 +320,23 @@ export function persistAutoSavedConfig(config) {
   idbSet(AUTO_STATE_KEY, config);
 }
 
+export function sortSavedConfigsByRecent(list) {
+  if (!Array.isArray(list)) return [];
+  const parseTs = (entry) => {
+    const raw = entry?.savedAt;
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+    if (typeof raw === 'string' && raw) {
+      const t = Date.parse(raw);
+      if (Number.isFinite(t)) return t;
+    }
+    return 0;
+  };
+  return list
+    .map((item, idx) => ({ item, idx, ts: parseTs(item) }))
+    .sort((a, b) => (b.ts !== a.ts ? b.ts - a.ts : a.idx - b.idx))
+    .map((x) => x.item);
+}
+
 export function loadSavedConfigsList(allCatalog, defaultRoom, layoutPresets) {
   try {
     const raw = localStorage.getItem(SAVED_CONFIGS_KEY);
@@ -336,7 +353,7 @@ export function loadSavedConfigsList(allCatalog, defaultRoom, layoutPresets) {
             });
           }
         }
-        return cleaned;
+        return sortSavedConfigsByRecent(cleaned);
       }
     }
 
@@ -359,33 +376,37 @@ export function loadSavedConfigsList(allCatalog, defaultRoom, layoutPresets) {
             }
           }
         }
-        if (migrated.length > 0) return migrated;
+        if (migrated.length > 0) return sortSavedConfigsByRecent(migrated);
       }
     }
   } catch (_) {}
 
-  // Default starter saved plans for immediate side-by-side comparison
-  const mkStarter = (id, name, presetKey) => {
+  // Default starter saved plans for immediate side-by-side comparison (staggered timestamps for stable newest-first order)
+  const baseMs = Date.now();
+  const mkStarter = (id, name, presetKey, offsetMs) => {
     const preset = layoutPresets[presetKey];
     if (!preset) return null;
     const res = validateAndNormalizeConfig(
-      { name, room: defaultRoom, items: preset.items },
+      { name, room: defaultRoom, items: preset.items, savedAt: new Date(baseMs - offsetMs).toISOString() },
       allCatalog,
       defaultRoom
     );
     return res.ok ? { id, ...res.config } : null;
   };
-  return [
-    mkStarter('slot_A', 'Layout A · Dual Face-Off', 'dual_parallel'),
-    mkStarter('slot_B', 'Layout B · Tandem West', 'dual_tandem_west'),
-  ].filter(Boolean);
+  return sortSavedConfigsByRecent(
+    [
+      mkStarter('slot_A', 'Layout A · Dual Face-Off', 'dual_parallel', 1000),
+      mkStarter('slot_B', 'Layout B · Tandem West', 'dual_tandem_west', 2000),
+    ].filter(Boolean)
+  );
 }
 
 export function persistSavedConfigsList(list) {
+  const sorted = sortSavedConfigsByRecent(list);
   try {
-    localStorage.setItem(SAVED_CONFIGS_KEY, JSON.stringify(list));
+    localStorage.setItem(SAVED_CONFIGS_KEY, JSON.stringify(sorted));
   } catch (_) {}
-  idbSet(SAVED_CONFIGS_KEY, list);
+  idbSet(SAVED_CONFIGS_KEY, sorted);
 }
 
 export function buildBackupBundle(currentConfig, savedConfigs) {

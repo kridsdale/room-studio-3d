@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { IN_TO_M, FINISH_SWATCHES } from './catalog.js';
+import { PRODUCT_THUMBNAILS } from './productThumbnails.js';
 
 function getSwatchColor(finishKey) {
   const sw = FINISH_SWATCHES[finishKey] || FINISH_SWATCHES.white;
@@ -45,8 +46,397 @@ function getWoodGrainTexture(hex) {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
+  tex.userData = { kind: 'wood_basic', woodStrength: 0.16, woodScale: 1.0 };
   woodTexCache.set(hex, tex);
   return tex;
+}
+
+// === TONSTAD ARCHITECTURAL WOOD VENEER & STAIN PBR TEXTURE ENGINE ===
+// Synthesizes 512x512 slip-matched European white oak / brown-stained oak / matte off-white veneer
+// with cathedral arches, rift grain, stain pooling in open oak pores, medullary ray flecks,
+// plus synchronized bumpMap & roughnessMap.
+
+function hash2D(ix, iy, seed = 0) {
+  let n = (ix * 374761393 + iy * 668265263 + seed * 1442695041) | 0;
+  n = (n ^ (n >> 13)) * 1274126177;
+  return ((n ^ (n >> 16)) >>> 0) / 4294967295;
+}
+
+function smoothNoise2D(x, y, seed = 0) {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const fx = x - ix;
+  const fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const a = hash2D(ix, iy, seed);
+  const b = hash2D(ix + 1, iy, seed);
+  const c = hash2D(ix, iy + 1, seed);
+  const d = hash2D(ix + 1, iy + 1, seed);
+  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+}
+
+function fbm2D(x, y, seed = 0, octaves = 3) {
+  let sum = 0;
+  let amp = 0.55;
+  let freq = 1;
+  let norm = 0;
+  for (let o = 0; o < octaves; o++) {
+    sum += amp * smoothNoise2D(x * freq, y * freq, seed + o * 31);
+    norm += amp;
+    amp *= 0.5;
+    freq *= 2.04;
+  }
+  return sum / norm;
+}
+
+const TONSTAD_MATERIAL_PROFILES = {
+  // IKEA TONSTAD brushed clear-lacquered oak veneer (warm Scandinavian pale white oak)
+  oak: {
+    spring: [220, 198, 163],
+    base: [204, 178, 139],
+    late: [170, 139, 98],
+    pore: [128, 97, 63],
+    ray: [232, 214, 183],
+    ringContrast: 1.0,
+    poreStrength: 0.88,
+    stainPool: 0.34,
+    rayStrength: 0.24,
+    roughBase: 0.58,
+    roughPore: 0.86,
+    bumpScale: 0.0046,
+    woodStrengthRT: 0.22,
+    woodScaleRT: 1.35,
+    seed: 17,
+  },
+  // IKEA TONSTAD brown-stained oak veneer (smoky walnut-brown with rich dark-espresso stain pooling in pores)
+  stainedOak: {
+    spring: [139, 113, 86],
+    base: [117, 92, 68],
+    late: [74, 55, 38],
+    pore: [44, 31, 20],
+    ray: [152, 126, 98],
+    ringContrast: 1.34,
+    poreStrength: 1.18,
+    stainPool: 0.78,
+    rayStrength: 0.16,
+    roughBase: 0.54,
+    roughPore: 0.84,
+    bumpScale: 0.0056,
+    woodStrengthRT: 0.26,
+    woodScaleRT: 1.4,
+    seed: 43,
+  },
+  // IKEA TONSTAD off-white matte lacquer (subtle warm ivory-greige satin finish with whisper oak pore relief)
+  offWhite: {
+    spring: [238, 233, 224],
+    base: [232, 226, 215],
+    late: [221, 214, 201],
+    pore: [209, 201, 188],
+    ray: [242, 238, 230],
+    ringContrast: 0.34,
+    poreStrength: 0.24,
+    stainPool: 0.1,
+    rayStrength: 0.06,
+    roughBase: 0.48,
+    roughPore: 0.62,
+    bumpScale: 0.0014,
+    woodStrengthRT: 0.05,
+    woodScaleRT: 1.0,
+    seed: 71,
+  },
+  white: {
+    spring: [245, 244, 240],
+    base: [240, 239, 234],
+    late: [231, 229, 223],
+    pore: [222, 220, 214],
+    ray: [248, 247, 244],
+    ringContrast: 0.26,
+    poreStrength: 0.18,
+    stainPool: 0.08,
+    rayStrength: 0.04,
+    roughBase: 0.46,
+    roughPore: 0.58,
+    bumpScale: 0.0011,
+    woodStrengthRT: 0.04,
+    woodScaleRT: 1.0,
+    seed: 83,
+  },
+  walnut: {
+    spring: [136, 96, 67],
+    base: [115, 77, 52],
+    late: [74, 46, 29],
+    pore: [45, 27, 17],
+    ray: [148, 108, 78],
+    ringContrast: 1.25,
+    poreStrength: 1.0,
+    stainPool: 0.65,
+    rayStrength: 0.12,
+    roughBase: 0.5,
+    roughPore: 0.8,
+    bumpScale: 0.0045,
+    woodStrengthRT: 0.24,
+    woodScaleRT: 1.35,
+    seed: 97,
+  },
+  blackBrown: {
+    spring: [58, 50, 45],
+    base: [46, 39, 35],
+    late: [30, 25, 22],
+    pore: [18, 15, 13],
+    ray: [66, 58, 52],
+    ringContrast: 1.18,
+    poreStrength: 1.05,
+    stainPool: 0.72,
+    rayStrength: 0.1,
+    roughBase: 0.52,
+    roughPore: 0.82,
+    bumpScale: 0.0048,
+    woodStrengthRT: 0.18,
+    woodScaleRT: 1.3,
+    seed: 113,
+  },
+  birch: {
+    spring: [231, 207, 169],
+    base: [219, 192, 150],
+    late: [195, 165, 122],
+    pore: [168, 138, 97],
+    ray: [238, 219, 188],
+    ringContrast: 0.78,
+    poreStrength: 0.52,
+    stainPool: 0.22,
+    rayStrength: 0.15,
+    roughBase: 0.54,
+    roughPore: 0.72,
+    bumpScale: 0.003,
+    woodStrengthRT: 0.16,
+    woodScaleRT: 1.2,
+    seed: 131,
+  },
+  pine: {
+    spring: [227, 195, 147],
+    base: [214, 179, 128],
+    late: [182, 141, 89],
+    pore: [152, 114, 67],
+    ray: [234, 206, 164],
+    ringContrast: 1.05,
+    poreStrength: 0.55,
+    stainPool: 0.28,
+    rayStrength: 0.1,
+    roughBase: 0.56,
+    roughPore: 0.76,
+    bumpScale: 0.0036,
+    woodStrengthRT: 0.2,
+    woodScaleRT: 1.25,
+    seed: 149,
+  },
+};
+
+const tonstadMatCache = new Map();
+
+function isTonstadCatalogEntry(catalogEntry) {
+  if (!catalogEntry) return false;
+  const t = catalogEntry.meshType || '';
+  if (t === 'tonstad_cabinet' || t === 'tonstad_hutch') return true;
+  if (/^tonstad_/i.test(catalogEntry.id || '')) return true;
+  if (/^tonstad\b/i.test(catalogEntry.name || '')) return true;
+  return false;
+}
+
+function getTonstadWoodMaterial(finishKey, axis = 'vertical') {
+  const prof = TONSTAD_MATERIAL_PROFILES[finishKey];
+  if (!prof) return makeMaterial(finishKey);
+  const cacheKey = `${finishKey}|${axis}`;
+  if (tonstadMatCache.has(cacheKey)) return tonstadMatCache.get(cacheKey);
+  if (typeof document === 'undefined') return makeMaterial(finishKey);
+
+  const size = 512;
+  const colCanvas = document.createElement('canvas');
+  colCanvas.width = size;
+  colCanvas.height = size;
+  const colCtx = colCanvas.getContext('2d');
+
+  const bumpCanvas = document.createElement('canvas');
+  bumpCanvas.width = size;
+  bumpCanvas.height = size;
+  const bumpCtx = bumpCanvas.getContext('2d');
+
+  const roughCanvas = document.createElement('canvas');
+  roughCanvas.width = size;
+  roughCanvas.height = size;
+  const roughCtx = roughCanvas.getContext('2d');
+
+  if (!colCtx || !bumpCtx || !roughCtx) return makeMaterial(finishKey);
+
+  const colImg = colCtx.createImageData(size, size);
+  const bumpImg = bumpCtx.createImageData(size, size);
+  const roughImg = roughCtx.createImageData(size, size);
+  const cd = colImg.data;
+  const bd = bumpImg.data;
+  const rd = roughImg.data;
+
+  // 3 slip-matched oak veneer flitches across the grain width (authentic IKEA TONSTAD panel joinery)
+  const flitches = [
+    { toneShift: -0.028, archCx: 0.42, archCy: 0.32, archTilt: 0.16, freq: 20.5, seedOff: 0 },
+    { toneShift: +0.024, archCx: 0.58, archCy: 0.72, archTilt: -0.12, freq: 22.8, seedOff: 19 },
+    { toneShift: -0.008, archCx: 0.46, archCy: 0.48, archTilt: 0.08, freq: 19.2, seedOff: 41 },
+  ];
+
+  const isHoriz = axis === 'horizontal';
+  const [sr, sg, sb] = prof.spring;
+  const [br, bg, bb] = prof.base;
+  const [lr, lg, lb] = prof.late;
+  const [pr, pg, pb] = prof.pore;
+  const [rr, rg, rb] = prof.ray;
+
+  for (let py = 0; py < size; py++) {
+    for (let px = 0; px < size; px++) {
+      // u = across grain (0..1), v = along grain (0..1)
+      const u = (isHoriz ? py : px) / size;
+      const v = (isHoriz ? px : py) / size;
+
+      const fIdx = Math.min(2, Math.floor(u * 3));
+      const fl = flitches[fIdx];
+      const localU = u * 3 - fIdx; // 0..1 within flitch
+      const fSeed = prof.seed + fl.seedOff;
+
+      // Subtle veneer flitch seam line
+      const edgeDist = Math.min(localU, 1 - localU);
+      const seamDark = edgeDist < 0.007 ? (1 - edgeDist / 0.007) * 0.085 : 0;
+
+      // Multi-octave organic fiber warp (elongated along grain v)
+      const warpLo = fbm2D(localU * 3.8, v * 1.45, fSeed, 3) - 0.5;
+      const warpHi = smoothNoise2D(localU * 14.0, v * 3.2, fSeed + 7) - 0.5;
+
+      // Cathedral arch field (crown-cut European white oak center, straighter rift grain near edges)
+      const du = (localU - fl.archCx) * 1.95;
+      const dv = (v - fl.archCy + fl.archTilt * du) * 0.42;
+      const cathedralDist = Math.sqrt(du * du + dv * dv * 0.85);
+      const riftField = Math.abs(localU - 0.5) * 2.0;
+
+      const ringCoord =
+        (cathedralDist * 0.72 + riftField * 0.38) * fl.freq +
+        warpLo * 5.2 +
+        warpHi * 1.1;
+      const wave = 0.5 + 0.5 * Math.sin(ringCoord * Math.PI * 2);
+      // Sharpen latewood bands so rings have authentic oak earlywood/latewood asymmetry
+      const lateAmt = Math.min(1, Math.pow(wave, 1.72) * prof.ringContrast);
+
+      // Fine anisotropic oak fiber streaks along grain
+      const fiberStreak = smoothNoise2D(localU * 88.0 + warpLo * 4.5, v * 7.5, fSeed + 53) - 0.5;
+
+      // Open oak vessel pores (crisp elongated dark dashes concentrated along ring boundaries)
+      const poreField = smoothNoise2D(localU * 165.0 + warpLo * 9.0, v * 28.0, fSeed + 89);
+      const poreMask = poreField > 0.76 ? ((poreField - 0.76) / 0.24) : 0;
+      const poreAmt = Math.min(1, poreMask * poreMask * (0.55 + 0.75 * lateAmt) * prof.poreStrength);
+
+      // Characteristic pale white-oak medullary ray flecks (short cross-grain ribbons)
+      const rayField = smoothNoise2D(localU * 18.0, v * 76.0, fSeed + 127);
+      const rayAmt = rayField > 0.84 ? ((rayField - 0.84) / 0.16) * prof.rayStrength : 0;
+
+      // Stain pooling concentrates pigment in latewood troughs and brushed valleys
+      const stainAmt = Math.min(1, (lateAmt * 0.65 + Math.max(0, -warpLo) * 0.55) * prof.stainPool);
+
+      // Blend springwood -> base -> latewood -> stain -> pores -> medullary rays
+      let cr = sr + (br - sr) * (0.45 + 0.55 * lateAmt);
+      let cg = sg + (bg - sg) * (0.45 + 0.55 * lateAmt);
+      let cb = sb + (bb - sb) * (0.45 + 0.55 * lateAmt);
+
+      const ringMix = Math.min(1, lateAmt * 0.78 + stainAmt * 0.42);
+      cr = cr + (lr - cr) * ringMix;
+      cg = cg + (lg - cg) * ringMix;
+      cb = cb + (lb - cb) * ringMix;
+
+      // Fine brushed fiber variation + flitch tone shift
+      const fMod = 1 + fl.toneShift + fiberStreak * 0.085 - seamDark;
+      cr *= fMod;
+      cg *= fMod;
+      cb *= fMod;
+
+      // Blend pale oak ray flecks
+      if (rayAmt > 0.001) {
+        cr = cr + (rr - cr) * rayAmt;
+        cg = cg + (rg - cg) * rayAmt;
+        cb = cb + (rb - cb) * rayAmt;
+      }
+
+      // Blend dark stained open pores
+      if (poreAmt > 0.001) {
+        cr = cr + (pr - cr) * poreAmt;
+        cg = cg + (pg - cg) * poreAmt;
+        cb = cb + (pb - cb) * poreAmt;
+      }
+
+      const idx = (py * size + px) * 4;
+      cd[idx] = Math.max(0, Math.min(255, Math.round(cr)));
+      cd[idx + 1] = Math.max(0, Math.min(255, Math.round(cg)));
+      cd[idx + 2] = Math.max(0, Math.min(255, Math.round(cb)));
+      cd[idx + 3] = 255;
+
+      // Bump height: pores recessed deeply, latewood ridges slightly proud, seams recessed
+      const bumpVal = Math.max(
+        0,
+        Math.min(255, Math.round(158 + (lateAmt - 0.5) * 34 + fiberStreak * 26 - poreAmt * 118 - seamDark * 260))
+      );
+      bd[idx] = bumpVal;
+      bd[idx + 1] = bumpVal;
+      bd[idx + 2] = bumpVal;
+      bd[idx + 3] = 255;
+
+      // Roughness map: brushed flats silky matte, open pores rougher
+      const roughVal = Math.max(
+        0,
+        Math.min(
+          255,
+          Math.round((prof.roughBase + (prof.roughPore - prof.roughBase) * (poreAmt * 0.8 + lateAmt * 0.2)) * 255)
+        )
+      );
+      rd[idx] = roughVal;
+      rd[idx + 1] = roughVal;
+      rd[idx + 2] = roughVal;
+      rd[idx + 3] = 255;
+    }
+  }
+
+  colCtx.putImageData(colImg, 0, 0);
+  bumpCtx.putImageData(bumpImg, 0, 0);
+  roughCtx.putImageData(roughImg, 0, 0);
+
+  const map = new THREE.CanvasTexture(colCanvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = THREE.RepeatWrapping;
+  map.wrapT = THREE.RepeatWrapping;
+  map.anisotropy = 8;
+  map.userData = {
+    kind: 'tonstad_wood',
+    finish: finishKey,
+    axis,
+    woodStrength: prof.woodStrengthRT,
+    woodScale: prof.woodScaleRT,
+  };
+
+  const bumpMap = new THREE.CanvasTexture(bumpCanvas);
+  bumpMap.wrapS = THREE.RepeatWrapping;
+  bumpMap.wrapT = THREE.RepeatWrapping;
+  bumpMap.anisotropy = 4;
+
+  const roughnessMap = new THREE.CanvasTexture(roughCanvas);
+  roughnessMap.wrapS = THREE.RepeatWrapping;
+  roughnessMap.wrapT = THREE.RepeatWrapping;
+  roughnessMap.anisotropy = 4;
+
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color('#ffffff'),
+    map,
+    bumpMap,
+    bumpScale: prof.bumpScale,
+    roughnessMap,
+    roughness: 1.0,
+    metalness: 0.02,
+  });
+
+  tonstadMatCache.set(cacheKey, mat);
+  return mat;
 }
 
 function makeMaterial(finishKey, extra = {}) {
@@ -75,46 +465,422 @@ function makeCabinetGlassMat() {
   });
 }
 
+// === TRUE-ASSET PHOTO TEXTURE PIPELINE FOR RUGS ===
+const rugBumpCache = new Map();
+const rugMatSetCache = new Map();
+
+function getRugBumpTexture(isWoven) {
+  const key = isWoven ? 'woven' : 'pile';
+  if (rugBumpCache.has(key)) return rugBumpCache.get(key);
+  if (typeof document === 'undefined') return null;
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const img = ctx.createImageData(size, size);
+  const d = img.data;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let val;
+      if (isWoven) {
+        // Interlocking flatwoven jute warp & weft braid
+        const warp = Math.sin((x / size) * Math.PI * 64);
+        const weft = Math.sin((y / size) * Math.PI * 24 + (Math.floor(x / 4) % 2) * Math.PI);
+        const n = hash2D(x, y, 211) * 0.25;
+        val = 128 + warp * 36 + weft * 42 + (n - 0.125) * 60;
+      } else {
+        // Soft plush tuft pile micro-texture
+        const n1 = smoothNoise2D(x * 0.35, y * 0.35, 307);
+        const n2 = hash2D(x, y, 311);
+        val = 110 + n1 * 70 + n2 * 55;
+      }
+      const b = Math.max(0, Math.min(255, Math.round(val)));
+      const idx = (y * size + x) * 4;
+      d[idx] = b;
+      d[idx + 1] = b;
+      d[idx + 2] = b;
+      d[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(isWoven ? 5 : 7, isWoven ? 7 : 10);
+  rugBumpCache.set(key, tex);
+  return tex;
+}
+
+// Photo-matched orthographic flatlay of the user's real 5'x8' geometric starburst triangle rug
 function createGeoRugTexture() {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 768;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#e5dfd2';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const W = canvas.width;
+  const H = canvas.height;
 
-  const colors = ['#2b4c65', '#4c7591', '#8ba7b8', '#b89b66', '#8a4a3d', '#d8d2c5'];
-  const cols = 6;
-  const rows = 9;
-  const cw = canvas.width / cols;
-  const rh = canvas.height / rows;
+  // Warm cream/ivory wool base matching the real photo
+  ctx.fillStyle = '#ddd6c8';
+  ctx.fillRect(0, 0, W, H);
+
+  // Authentic stepped diamond-starburst triangle quilt matching user photo (rust center -> cream -> deep navy -> slate blue -> cream -> warm ochre/tan)
+  const cols = 8;
+  const rows = 12;
+  const cw = W / cols;
+  const rh = H / rows;
+  const ringPalette = [
+    '#6e3a33', // deep terracotta/rust starburst center
+    '#ddd5c6', // warm cream step ring
+    '#243848', // deep midnight slate-navy
+    '#4d697b', // dusty medium slate blue
+    '#d8cfc0', // soft ivory band
+    '#a78862', // warm ochre-tan triangle border
+  ];
+
+  // 2 medallion starburst centers along the 5'x8' rug length
+  const centers = [
+    { cx: cols * 0.5, cy: rows * 0.25 },
+    { cx: cols * 0.5, cy: rows * 0.75 },
+  ];
+
+  const pickRingColor = (gx, gy) => {
+    let bestD = Infinity;
+    for (const ct of centers) {
+      const manhattan = Math.abs(gx - ct.cx) * 1.08 + Math.abs(gy - ct.cy) * 0.92;
+      if (manhattan < bestD) bestD = manhattan;
+    }
+    const ringIdx = Math.floor(bestD * 1.18) % ringPalette.length;
+    return ringPalette[ringIdx];
+  };
+
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const x = c * cw;
       const y = r * rh;
-      ctx.fillStyle = colors[(r * 3 + c * 5) % colors.length];
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + cw, y);
-      ctx.lineTo(x + cw / 2, y + rh);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.fillStyle = colors[(r * 2 + c * 7 + 2) % colors.length];
-      ctx.beginPath();
-      ctx.moveTo(x, y + rh);
-      ctx.lineTo(x + cw, y + rh);
-      ctx.lineTo(x + cw / 2, y);
-      ctx.closePath();
-      ctx.fill();
+      // Split each cell into 4 crisp kilim triangles radiating from center
+      const mx = x + cw * 0.5;
+      const my = y + rh * 0.5;
+      const tris = [
+        { pts: [[x, y], [x + cw, y], [mx, my]], gx: c + 0.5, gy: r + 0.22 },
+        { pts: [[x + cw, y], [x + cw, y + rh], [mx, my]], gx: c + 0.78, gy: r + 0.5 },
+        { pts: [[x + cw, y + rh], [x, y + rh], [mx, my]], gx: c + 0.5, gy: r + 0.78 },
+        { pts: [[x, y + rh], [x, y], [mx, my]], gx: c + 0.22, gy: r + 0.5 },
+      ];
+      for (const tri of tris) {
+        ctx.fillStyle = pickRingColor(tri.gx, tri.gy);
+        ctx.beginPath();
+        ctx.moveTo(tri.pts[0][0], tri.pts[0][1]);
+        ctx.lineTo(tri.pts[1][0], tri.pts[1][1]);
+        ctx.lineTo(tri.pts[2][0], tri.pts[2][1]);
+        ctx.closePath();
+        ctx.fill();
+      }
     }
   }
+
+  // Subtle flatwoven textile weave & stitched cream/navy border
+  ctx.fillStyle = 'rgba(255,250,242,0.08)';
+  for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1);
+  ctx.fillStyle = 'rgba(25,30,36,0.06)';
+  for (let x = 0; x < W; x += 4) ctx.fillRect(x, 0, 1, H);
+  ctx.strokeStyle = 'rgba(42,56,68,0.45)';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(3, 3, W - 6, H - 6);
+
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.userData = { kind: 'rug_photo' };
   return tex;
 }
 
-let cachedGeoRugTex = null;
+// Automatically detect & crop pure-white IKEA studio margins around orthographic rug photos
+function trimWhiteStudioBorder(img) {
+  const sw = img.naturalWidth || img.width || 0;
+  const sh = img.naturalHeight || img.height || 0;
+  if (sw < 16 || sh < 16) return { sx: 0, sy: 0, sw, sh, avgRgb: [200, 192, 178] };
+
+  const tmp = document.createElement('canvas');
+  tmp.width = sw;
+  tmp.height = sh;
+  const tctx = tmp.getContext('2d', { willReadFrequently: true });
+  tctx.drawImage(img, 0, 0, sw, sh);
+  const data = tctx.getImageData(0, 0, sw, sh).data;
+
+  const isBgPixel = (x, y) => {
+    const i = (y * sw + x) * 4;
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const a = data[i + 3];
+    if (a < 20) return true;
+    const maxC = Math.max(r, g, b);
+    const minC = Math.min(r, g, b);
+    return r >= 248 && g >= 246 && b >= 242 && maxC - minC <= 9;
+  };
+
+  let minX = 0;
+  let maxX = sw - 1;
+  let minY = 0;
+  let maxY = sh - 1;
+
+  const colThreshold = Math.max(4, Math.floor(sh * 0.14));
+  const rowThreshold = Math.max(4, Math.floor(sw * 0.14));
+
+  for (let x = 0; x < sw; x++) {
+    let fg = 0;
+    for (let y = 0; y < sh; y += 2) {
+      if (!isBgPixel(x, y)) fg++;
+    }
+    if (fg * 2 >= colThreshold) { minX = x; break; }
+  }
+  for (let x = sw - 1; x >= minX; x--) {
+    let fg = 0;
+    for (let y = 0; y < sh; y += 2) {
+      if (!isBgPixel(x, y)) fg++;
+    }
+    if (fg * 2 >= colThreshold) { maxX = x; break; }
+  }
+  for (let y = 0; y < sh; y++) {
+    let fg = 0;
+    for (let x = minX; x <= maxX; x += 2) {
+      if (!isBgPixel(x, y)) fg++;
+    }
+    if (fg * 2 >= rowThreshold) { minY = y; break; }
+  }
+  for (let y = sh - 1; y >= minY; y--) {
+    let fg = 0;
+    for (let x = minX; x <= maxX; x += 2) {
+      if (!isBgPixel(x, y)) fg++;
+    }
+    if (fg * 2 >= rowThreshold) { maxY = y; break; }
+  }
+
+  let cw = maxX - minX + 1;
+  let ch = maxY - minY + 1;
+  // Safety guard for ultra-white rugs (e.g. VOLLERSLEV / ÄRENDE) so we never collapse to empty crop
+  if (cw < sw * 0.25 || ch < sh * 0.25) {
+    minX = Math.round(sw * 0.17);
+    maxX = Math.round(sw * 0.83);
+    minY = Math.round(sh * 0.04);
+    maxY = Math.round(sh * 0.96);
+    cw = maxX - minX + 1;
+    ch = maxY - minY + 1;
+  } else {
+    // 2% inward trim eliminates anti-aliased white studio halo fringes
+    const padX = Math.max(1, Math.round(cw * 0.02));
+    const padY = Math.max(1, Math.round(ch * 0.02));
+    minX = Math.min(sw - 2, minX + padX);
+    maxX = Math.max(minX + 1, maxX - padX);
+    minY = Math.min(sh - 2, minY + padY);
+    maxY = Math.max(minY + 1, maxY - padY);
+    cw = maxX - minX + 1;
+    ch = maxY - minY + 1;
+  }
+
+  // Sample average interior rug color for edge binding & RT fallback
+  let rSum = 0, gSum = 0, bSum = 0, cnt = 0;
+  for (let gy = 1; gy <= 6; gy++) {
+    for (let gx = 1; gx <= 6; gx++) {
+      const px = Math.min(sw - 1, Math.round(minX + (cw * gx) / 7));
+      const py = Math.min(sh - 1, Math.round(minY + (ch * gy) / 7));
+      const i = (py * sw + px) * 4;
+      rSum += data[i];
+      gSum += data[i + 1];
+      bSum += data[i + 2];
+      cnt++;
+    }
+  }
+  const avgRgb = cnt ? [Math.round(rSum / cnt), Math.round(gSum / cnt), Math.round(bSum / cnt)] : [200, 192, 178];
+  return { sx: minX, sy: minY, sw: cw, sh: ch, avgRgb };
+}
+
+function drawFallbackRugCanvas(canvas, finishKey, isWoven) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const W = canvas.width;
+  const H = canvas.height;
+  const sw = FINISH_SWATCHES[finishKey] || FINISH_SWATCHES.beige;
+  const cleanHex = String(sw.hex || '#cfc6b5').replace('#', '');
+  const r0 = parseInt(cleanHex.slice(0, 2), 16) || 207;
+  const g0 = parseInt(cleanHex.slice(2, 4), 16) || 198;
+  const b0 = parseInt(cleanHex.slice(4, 6), 16) || 181;
+  ctx.fillStyle = `rgb(${r0},${g0},${b0})`;
+  ctx.fillRect(0, 0, W, H);
+  // Subtle tactile textile weave / plush tufts while photo loads (or offline)
+  if (isWoven) {
+    for (let x = 0; x < W; x += 6) {
+      const d = ((x * 13) % 14) - 7;
+      ctx.fillStyle = `rgba(${Math.max(0, Math.min(255, r0 + d))},${Math.max(0, Math.min(255, g0 + d))},${Math.max(0, Math.min(255, b0 + d))},0.35)`;
+      ctx.fillRect(x, 0, 3, H);
+    }
+    for (let y = 0; y < H; y += 8) {
+      ctx.fillStyle = 'rgba(60,48,34,0.08)';
+      ctx.fillRect(0, y, W, 2);
+    }
+  } else {
+    for (let y = 0; y < H; y += 4) {
+      const d = Math.sin(y * 0.14) * 6;
+      ctx.fillStyle = `rgba(${Math.max(0, Math.min(255, Math.round(r0 + d)))},${Math.max(0, Math.min(255, Math.round(g0 + d)))},${Math.max(0, Math.min(255, Math.round(b0 + d)))},0.22)`;
+      ctx.fillRect(0, y, W, 4);
+    }
+  }
+  ctx.strokeStyle = `rgba(${Math.max(0, r0 - 30)},${Math.max(0, g0 - 30)},${Math.max(0, b0 - 30)},0.45)`;
+  ctx.lineWidth = 4;
+  ctx.strokeRect(2, 2, W - 4, H - 4);
+}
+
+function paintRugPhotoToCanvas(img, canvas, opts) {
+  const { landscapeBox, tintHex, isWoven } = opts;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const W = canvas.width;
+  const H = canvas.height;
+  const crop = trimWhiteStudioBorder(img);
+
+  ctx.save();
+  ctx.clearRect(0, 0, W, H);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  const photoLandscape = crop.sw > crop.sh * 1.05;
+  const photoPortrait = crop.sh > crop.sw * 1.05;
+  const shouldRotate90 = (landscapeBox && photoPortrait) || (!landscapeBox && photoLandscape);
+
+  if (shouldRotate90) {
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, -H / 2, -W / 2, H, W);
+  } else {
+    ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, W, H);
+  }
+  ctx.restore();
+
+  // If user selected a non-default finish swatch on a solid/woven curated rug (e.g., STOENSE -> Sage),
+  // softly tint the real asset photo while preserving its authentic pile/weave texture!
+  if (tintHex) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'color';
+    ctx.fillStyle = tintHex;
+    ctx.globalAlpha = 0.72;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = tintHex;
+    ctx.globalAlpha = 0.22;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  // Crisp subtle overlocked perimeter binding seam
+  ctx.strokeStyle = isWoven ? 'rgba(65,52,36,0.22)' : 'rgba(40,36,30,0.14)';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(2, 2, W - 4, H - 4);
+  return crop.avgRgb;
+}
+
+function getRugMaterialSet(catalogEntry, finishKey, wMeters, dMeters) {
+  const isWoven = catalogEntry.meshType === 'rug_woven';
+  const isGeo = catalogEntry.meshType === 'rug_geo';
+  const landscapeBox = wMeters > dMeters * 1.05;
+  const cacheKey = `${catalogEntry.id}|${finishKey}|${landscapeBox ? 'L' : 'P'}`;
+  if (rugMatSetCache.has(cacheKey)) return rugMatSetCache.get(cacheKey);
+
+  const bumpMap = getRugBumpTexture(isWoven);
+  const edgeMat = new THREE.MeshStandardMaterial({
+    color: getSwatchColor(finishKey),
+    roughness: 0.95,
+    metalness: 0.0,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  });
+
+  if (isGeo) {
+    const geoTex = createGeoRugTexture();
+    const topMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color('#ffffff'),
+      map: geoTex,
+      bumpMap,
+      bumpScale: 0.005,
+      roughness: 0.94,
+      metalness: 0.0,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -3,
+    });
+    edgeMat.color.set('#3a4f5e');
+    const pair = { topMat, edgeMat };
+    rugMatSetCache.set(cacheKey, pair);
+    return pair;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = landscapeBox ? 768 : 512;
+  canvas.height = landscapeBox ? 512 : 768;
+  drawFallbackRugCanvas(canvas, finishKey, isWoven);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  tex.userData = { kind: 'rug_photo', catalogId: catalogEntry.id };
+
+  const topMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color('#ffffff'),
+    map: tex,
+    bumpMap,
+    bumpScale: isWoven ? 0.0065 : 0.0042,
+    roughness: 0.94,
+    metalness: 0.0,
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+    polygonOffsetUnits: -3,
+  });
+
+  // Determine if user explicitly changed finish away from default on a multi-swatch rug (e.g. STOENSE)
+  const isCustomTint =
+    finishKey &&
+    catalogEntry.defaultFinish &&
+    finishKey !== catalogEntry.defaultFinish &&
+    Array.isArray(catalogEntry.finishes) &&
+    catalogEntry.finishes.length > 1;
+  const tintHex = isCustomTint ? (FINISH_SWATCHES[finishKey]?.hex || null) : null;
+
+  const applyPhoto = (srcUrl, isCrossOrigin) => {
+    if (!srcUrl || typeof Image === 'undefined') return;
+    const img = new Image();
+    if (isCrossOrigin) img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const avgRgb = paintRugPhotoToCanvas(img, canvas, { landscapeBox, tintHex, isWoven });
+        if (avgRgb && !tintHex) {
+          edgeMat.color.setRGB(avgRgb[0] / 255, avgRgb[1] / 255, avgRgb[2] / 255);
+        }
+        tex.needsUpdate = true;
+      } catch (_) {
+        // Keep clean fallback if canvas tainted or image unreadable
+      }
+    };
+    img.src = srcUrl;
+  };
+
+  // 1. Embedded offline thumbnail first (instant 0ms load for STOENSE & LOHALS!)
+  const embeddedThumb = PRODUCT_THUMBNAILS[catalogEntry.id];
+  if (embeddedThumb) {
+    applyPhoto(embeddedThumb, false);
+  }
+  // 2. High-resolution IKEA CDN photo (?f=xxs -> ?f=s = 600x600 sharp orthographic flatlay!)
+  if (catalogEntry.imageUrl) {
+    const hiResUrl = catalogEntry.imageUrl.replace(/([?&])f=xxs\b/i, '$1f=s');
+    applyPhoto(hiResUrl, true);
+  }
+
+  const pair = { topMat, edgeMat };
+  rugMatSetCache.set(cacheKey, pair);
+  return pair;
+}
 
 function addBox(parent, w, h, d, mat, x = 0, y = 0, z = 0, cast = true) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -320,8 +1086,15 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
   const h = catalogEntry.h * IN_TO_M;
 
   const activeFinish = finishKey || catalogEntry.defaultFinish || 'white';
-  const primaryMat = makeMaterial(activeFinish);
-  const frontMat = frontFinish ? makeMaterial(frontFinish) : primaryMat;
+  const isTonstad = isTonstadCatalogEntry(catalogEntry);
+  const primaryMat = isTonstad ? getTonstadWoodMaterial(activeFinish, 'vertical') : makeMaterial(activeFinish);
+  const primaryMatH = isTonstad ? getTonstadWoodMaterial(activeFinish, 'horizontal') : primaryMat;
+  const frontMat = frontFinish
+    ? (isTonstad ? getTonstadWoodMaterial(frontFinish, 'vertical') : makeMaterial(frontFinish))
+    : primaryMat;
+  const frontMatH = frontFinish
+    ? (isTonstad ? getTonstadWoodMaterial(frontFinish, 'horizontal') : makeMaterial(frontFinish))
+    : primaryMatH;
   const darkMetal = new THREE.MeshStandardMaterial({ color: 0x242629, roughness: 0.38, metalness: 0.65 });
   const silverMetal = new THREE.MeshStandardMaterial({ color: 0xc2c7cc, roughness: 0.28, metalness: 0.78 });
   const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf4f3ef, roughness: 0.55 });
@@ -333,7 +1106,9 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
   const recessMat = new THREE.MeshStandardMaterial({ color: 0x3b2a1d, roughness: 0.78 });
   const trackMat = new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 0.45, metalness: 0.35 });
   const glassMat = makeCabinetGlassMat();
-  const oakKnobMat = makeMaterial(activeFinish === 'stainedOak' ? 'stainedOak' : 'oak');
+  const oakKnobMat = isTonstad
+    ? getTonstadWoodMaterial(activeFinish === 'stainedOak' ? 'stainedOak' : 'oak', 'horizontal')
+    : makeMaterial(activeFinish === 'stainedOak' ? 'stainedOak' : 'oak');
 
   const cabMats = {
     darkMetal,
@@ -653,12 +1428,12 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
     const backT = 0.014;
     const innerD = d - backT - 0.036;
 
-    // Recessed plinth toe-kick base
-    addBox(group, w - 0.016, plinthH, d - 0.032, primaryMat, 0, plinthH / 2 + 0.001, -0.006);
-    // Thick bottom deck & top cap
-    addBox(group, w, t, d, primaryMat, 0, plinthH + t / 2, 0);
-    addBox(group, w, t, d, primaryMat, 0, h - t / 2, 0);
-    // Outer vertical side panels strictly between bottom deck & top cap
+    // Recessed plinth toe-kick base (horizontal oak grain)
+    addBox(group, w - 0.016, plinthH, d - 0.032, primaryMatH, 0, plinthH / 2 + 0.001, -0.006);
+    // Thick bottom deck & top cap (horizontal oak grain)
+    addBox(group, w, t, d, primaryMatH, 0, plinthH + t / 2, 0);
+    addBox(group, w, t, d, primaryMatH, 0, h - t / 2, 0);
+    // Outer vertical side panels strictly between bottom deck & top cap (vertical oak grain)
     const sideH = h - plinthH - t * 2 - 0.002;
     const sideCy = plinthH + t + sideH / 2;
     addBox(group, t, sideH, d, primaryMat, -w / 2 + t / 2, sideCy, 0);
@@ -676,7 +1451,7 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
       for (let s = 1; s <= shelfCount; s++) {
         const sy = plinthH + t + (s / (shelfCount + 1)) * sideH;
         const shelfZ = -d / 2 + backT + innerD / 2 + 0.004;
-        addBox(group, innerW - 0.004, 0.02, innerD, primaryMat, 0, sy, shelfZ);
+        addBox(group, innerW - 0.004, 0.02, innerD, primaryMatH, 0, sy, shelfZ);
       }
       // Populate interior props so glass doors & open-door peeks look rich and lived-in
       const bayW = innerW / bays;
@@ -723,6 +1498,8 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
     const baySpanW = (innerW - (bays === 2 ? t : 0)) / bays;
 
     if (style === 'sliding_glass' || style === 'sliding_solid') {
+      // Wide low TV unit sliding doors have authentic horizontal oak veneer grain (IKEA #605.429.62)
+      const slideDoorMat = h < 0.65 && style === 'sliding_solid' ? frontMatH : frontMat;
       for (let b = 0; b < bays; b++) {
         const bayCx = bays === 1 ? 0 : (b === 0 ? -innerW / 4 - t * 0.25 : innerW / 4 + t * 0.25);
         addSlidingDoorPair(
@@ -732,7 +1509,7 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
           bayCx,
           sideCy,
           frontZ,
-          frontMat,
+          slideDoorMat,
           style === 'sliding_glass',
           doorsOpen,
           hardware,
@@ -769,8 +1546,8 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
           if (r > 0) {
             addBox(group, dw, 0.005, 0.01, recessMat, bayCx, plinthH + t + 0.008 + r * dh, frontZ - 0.006, false);
           }
-          // Drawer front
-          addBox(group, dw, dh - 0.008, 0.018, frontMat, bayCx, cy, frontZ + pullOut);
+          // Drawer front (horizontal oak veneer grain across drawer width)
+          addBox(group, dw, dh - 0.008, 0.018, frontMatH, bayCx, cy, frontZ + pullOut);
           // Interior drawer box visible when pulled out
           if (pullOut > 0.01) {
             const boxD = Math.min(d - 0.06, 0.36);
@@ -793,7 +1570,7 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
     } else if (style === 'glass_top_drawers_bottom') {
       // Hybrid: lower 42% = 2 drawers, upper 58% = sliding glass doors!
       const splitY = plinthH + t + sideH * 0.42;
-      addBox(group, innerW - 0.002, 0.022, d - backT - 0.02, primaryMat, 0, splitY, 0);
+      addBox(group, innerW - 0.002, 0.022, d - backT - 0.02, primaryMatH, 0, splitY, 0);
       const lowH = sideH * 0.42 - 0.014;
       const topH = sideH * 0.58 - 0.014;
       const dh = lowH / 2;
@@ -803,7 +1580,7 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
           const pullOut = doorsOpen && r === 1 ? 0.2 : 0;
           const cy = plinthH + t + (r + 0.5) * dh;
           const dw = baySpanW - 0.008;
-          addBox(group, dw, dh - 0.008, 0.018, frontMat, bayCx, cy, frontZ + pullOut);
+          addBox(group, dw, dh - 0.008, 0.018, frontMatH, bayCx, cy, frontZ + pullOut);
           addCabinetHardware(group, bayCx - dw * 0.24, cy, frontZ + pullOut + 0.009, hardware, 'oak_knob', cabMats);
           addCabinetHardware(group, bayCx + dw * 0.24, cy, frontZ + pullOut + 0.009, hardware, 'oak_knob', cabMats);
         }
@@ -829,9 +1606,9 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
     const innerW = w - t * 2 - 0.002;
     const baseSideH = baseH - plinthH - t * 2 - 0.002;
     const baseSideCy = plinthH + t + baseSideH / 2;
-    addBox(group, w - 0.016, plinthH, d - 0.032, primaryMat, 0, plinthH / 2 + 0.001, -0.006);
-    addBox(group, w, t, d, primaryMat, 0, plinthH + t / 2, 0);
-    addBox(group, w, t, d, primaryMat, 0, baseH - t / 2, 0);
+    addBox(group, w - 0.016, plinthH, d - 0.032, primaryMatH, 0, plinthH / 2 + 0.001, -0.006);
+    addBox(group, w, t, d, primaryMatH, 0, plinthH + t / 2, 0);
+    addBox(group, w, t, d, primaryMatH, 0, baseH - t / 2, 0);
     addBox(group, t, baseSideH, d, primaryMat, -w / 2 + t / 2, baseSideCy, 0);
     addBox(group, t, baseSideH, d, primaryMat, w / 2 - t / 2, baseSideCy, 0);
     addBox(group, innerW, baseSideH - 0.002, 0.014, primaryMat, 0, baseSideCy, -d / 2 + 0.009);
@@ -845,7 +1622,7 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
 
     // Interior lower shelf + KUGGIS boxes
     if (!baseIsDrawers) {
-      addBox(group, innerW - 0.004, 0.02, d - 0.056, primaryMat, 0, baseSideCy, -0.004);
+      addBox(group, innerW - 0.004, 0.02, d - 0.056, primaryMatH, 0, baseSideCy, -0.004);
       for (let b = 0; b < bays; b++) {
         const bayCx = bays === 1 ? 0 : (b === 0 ? -innerW / 4 - t * 0.25 : innerW / 4 + t * 0.25);
         addKuggisBox(group, Math.min(0.28, baseBayW * 0.38), 0.14, 0.3, bayCx - baseBayW * 0.22, plinthH + t + 0.072, 0.01);
@@ -874,7 +1651,7 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
           const pullOut = doorsOpen && r === 2 ? 0.22 : 0;
           const cy = plinthH + t + 0.008 + (r + 0.5) * dh;
           const dw = baseBayW - 0.008;
-          addBox(group, dw, dh - 0.008, 0.018, frontMat, bayCx, cy, baseFrontZ + pullOut);
+          addBox(group, dw, dh - 0.008, 0.018, frontMatH, bayCx, cy, baseFrontZ + pullOut);
           if (hardware === 'auto' || hardware === 'recessed') {
             addBox(group, Math.min(0.18, dw * 0.34), 0.012, 0.006, recessMat, bayCx, cy + dh * 0.34, baseFrontZ + pullOut + 0.01, false);
           } else {
@@ -895,8 +1672,8 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
     const uBaseY = baseH + 0.002;
     const uSideCy = uBaseY + t + uSideH / 2;
 
-    addBox(group, upperW, t, upperD, primaryMat, upperCx, uBaseY + t / 2, upperZ);
-    addBox(group, upperW, t, upperD, primaryMat, upperCx, h - t / 2, upperZ);
+    addBox(group, upperW, t, upperD, primaryMatH, upperCx, uBaseY + t / 2, upperZ);
+    addBox(group, upperW, t, upperD, primaryMatH, upperCx, h - t / 2, upperZ);
     addBox(group, t, uSideH, upperD, primaryMat, upperCx - upperW / 2 + t / 2, uSideCy, upperZ);
     addBox(group, t, uSideH, upperD, primaryMat, upperCx + upperW / 2 - t / 2, uSideCy, upperZ);
     addBox(group, uInnerW, uSideH - 0.002, 0.014, primaryMat, upperCx, uSideCy, -d / 2 + 0.009);
@@ -908,7 +1685,7 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
     const uShelfD = upperD - 0.05;
     for (let s = 1; s <= 2; s++) {
       const sy = uBaseY + t + (s / 3) * uSideH;
-      addBox(group, uInnerW - 0.004, 0.02, uShelfD, primaryMat, upperCx, sy, upperZ - 0.004);
+      addBox(group, uInnerW - 0.004, 0.02, uShelfD, primaryMatH, upperCx, sy, upperZ - 0.004);
     }
     const uBaySpanW = (uInnerW - (upperBays === 2 ? t : 0)) / upperBays;
     for (let b = 0; b < upperBays; b++) {
@@ -1350,8 +2127,8 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
     }
   } else if (type === 'coffee_rect') {
     const leg = 0.05;
-    addBox(group, w, 0.048, d, primaryMat, 0, h - 0.024, 0);
-    addBox(group, w - leg * 2 - 0.006, 0.022, d - leg * 2 - 0.006, primaryMat, 0, h * 0.38, 0);
+    addBox(group, w, 0.048, d, primaryMatH, 0, h - 0.024, 0);
+    addBox(group, w - leg * 2 - 0.006, 0.022, d - leg * 2 - 0.006, primaryMatH, 0, h * 0.38, 0);
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
         addBox(group, leg, h - 0.05, leg, primaryMat, sx * (w / 2 - leg / 2), (h - 0.05) / 2 + 0.001, sz * (d / 2 - leg / 2));
@@ -1385,32 +2162,29 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
       }
     }
   } else if (type === 'nightstand') {
-    addBox(group, w, 0.028, d, primaryMat, 0, h - 0.014, 0);
+    addBox(group, w, 0.028, d, primaryMatH, 0, h - 0.014, 0);
     const legOff = 0.044;
-    addBox(group, w - legOff * 2, 0.16, d - legOff * 2, primaryMat, 0, h - 0.11, 0);
+    addBox(group, w - legOff * 2, 0.16, d - legOff * 2, primaryMatH, 0, h - 0.11, 0);
     const kn = new THREE.Mesh(new THREE.SphereGeometry(0.013, 8, 8), darkMetal);
     kn.position.set(0, h - 0.11, d / 2 - legOff + 0.012);
     group.add(kn);
-    addBox(group, w - legOff * 2, 0.02, d - legOff * 2, primaryMat, 0, 0.16, 0);
+    addBox(group, w - legOff * 2, 0.02, d - legOff * 2, primaryMatH, 0, 0.16, 0);
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
         addBox(group, 0.032, h - 0.03, 0.032, primaryMat, sx * (w / 2 - 0.024), (h - 0.03) / 2 + 0.001, sz * (d / 2 - 0.024));
       }
     }
   } else if (type === 'rug' || type === 'rug_woven' || type === 'rug_geo') {
-    let mat = primaryMat.clone();
-    if (type === 'rug_geo') {
-      if (!cachedGeoRugTex) cachedGeoRugTex = createGeoRugTexture();
-      mat = new THREE.MeshStandardMaterial({ map: cachedGeoRugTex, roughness: 0.96 });
-    }
-    mat.polygonOffset = true;
-    mat.polygonOffsetFactor = -1;
-    mat.polygonOffsetUnits = -1;
+    const { topMat, edgeMat } = getRugMaterialSet(catalogEntry, activeFinish, w, d);
     const rugH = Math.max(h, 0.012);
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, rugH, d), mat);
-    mesh.position.set(0, rugH / 2 + 0.004, 0);
-    mesh.receiveShadow = true;
-    group.add(mesh);
+    const baseMesh = new THREE.Mesh(new THREE.BoxGeometry(w, rugH, d), edgeMat);
+    baseMesh.position.set(0, rugH / 2 + 0.004, 0);
+    baseMesh.receiveShadow = true;
+    const topPlane = new THREE.Mesh(new THREE.PlaneGeometry(w, d), topMat);
+    topPlane.rotation.x = -Math.PI / 2;
+    topPlane.position.set(0, rugH + 0.0055, 0);
+    topPlane.receiveShadow = true;
+    group.add(baseMesh, topPlane);
   } else if (type === 'floor_lamp') {
     const base = new THREE.Mesh(new THREE.CylinderGeometry(w / 2, w / 2, 0.024, 24), primaryMat);
     base.position.set(0, 0.013, 0);

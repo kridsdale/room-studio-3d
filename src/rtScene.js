@@ -45,7 +45,15 @@ function classifyMaterial(mat, mesh) {
 
   const isTransparent = !!mat.transparent && (mat.opacity ?? 1) < 0.78;
   const isGlass = isTransparent && (mat.roughness ?? 0.5) < 0.35;
-  const roughness = Math.max(0.04, Math.min(0.98, mat.roughness ?? (mat.isMeshBasicMaterial ? 0.6 : 0.55)));
+  let roughness = Math.max(0.04, Math.min(0.98, mat.roughness ?? (mat.isMeshBasicMaterial ? 0.6 : 0.55)));
+  if (mat.roughnessMap && mat.roughnessMap.image instanceof HTMLCanvasElement) {
+    try {
+      const rImg = mat.roughnessMap.image;
+      const rCtx = rImg.getContext('2d');
+      const rPx = rCtx.getImageData(Math.floor(rImg.width * 0.5), Math.floor(rImg.height * 0.5), 1, 1).data;
+      roughness = Math.max(0.04, Math.min(0.98, (rPx[0] / 255) * (mat.roughness ?? 1.0)));
+    } catch (_) {}
+  }
   const metalness = Math.max(0, Math.min(1, mat.metalness ?? 0.02));
 
   let emR = 0;
@@ -70,21 +78,45 @@ function classifyMaterial(mat, mesh) {
   let baseB = b;
 
   if (mat.map && mat.map.image) {
-    // Sample average color from canvas texture if available (our procedural oak & floor textures use white tint + map!)
+    // Sample 5x5 average color from canvas texture if available (procedural oak, TONSTAD veneer, rugs & floor!)
     const img = mat.map.image;
     if (img instanceof HTMLCanvasElement) {
       try {
         const ctx = img.getContext('2d');
-        const px = ctx.getImageData(Math.floor(img.width * 0.5), Math.floor(img.height * 0.5), 1, 1).data;
-        const sr = px[0] / 255;
-        const sg = px[1] / 255;
-        const sb = px[2] / 255;
+        let srSum = 0, sgSum = 0, sbSum = 0, cnt = 0;
+        for (let gy = 1; gy <= 5; gy++) {
+          for (let gx = 1; gx <= 5; gx++) {
+            const px = ctx.getImageData(
+              Math.floor((img.width * gx) / 6),
+              Math.floor((img.height * gy) / 6),
+              1,
+              1
+            ).data;
+            srSum += px[0] / 255;
+            sgSum += px[1] / 255;
+            sbSum += px[2] / 255;
+            cnt++;
+          }
+        }
+        const sr = cnt ? srSum / cnt : 0.7;
+        const sg = cnt ? sgSum / cnt : 0.7;
+        const sb = cnt ? sbSum / cnt : 0.7;
         // Convert sRGB sample -> linear
         baseR = Math.pow(sr, 2.2) * r;
         baseG = Math.pow(sg, 2.2) * g;
         baseB = Math.pow(sb, 2.2) * b;
-        // Floor plank texture is 512x512; wood grain veneer is 256x256
-        if (img.width === 512 && img.height === 512) {
+
+        const kind = mat.map.userData?.kind;
+        if (kind === 'tonstad_wood') {
+          woodStrength = mat.map.userData.woodStrength ?? 0.22;
+          woodScale = mat.map.userData.woodScale ?? 1.35;
+        } else if (kind === 'rug_photo') {
+          woodStrength = 0.06;
+          woodScale = 3.5;
+        } else if (kind === 'wood_basic') {
+          woodStrength = 0.16;
+          woodScale = 1.0;
+        } else if (img.width === 512 && img.height === 512) {
           woodStrength = 0.24; // oak floor planks
           woodScale = 2.0;
         } else if (img.width === 256 && img.height === 256) {
@@ -155,7 +187,9 @@ export function buildRTScene(roots, room, lightingMood = 'day', wallMode = 'cuta
     }
 
     if (node.isMesh && node.geometry && node.material && !node.isLine) {
-      const mat = Array.isArray(node.material) ? node.material[0] : node.material;
+      const mat = Array.isArray(node.material)
+        ? (node.material[2]?.map?.userData?.kind === 'rug_photo' ? node.material[2] : node.material[0])
+        : node.material;
       // Skip ultra-faint helper overlays / UI decals
       if (mat && !(mat.transparent && (mat.opacity ?? 1) < 0.08)) {
         const geo = node.geometry;

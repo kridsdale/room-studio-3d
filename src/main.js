@@ -51,6 +51,7 @@ import {
   persistAutoSavedConfig,
   loadSavedConfigsList,
   persistSavedConfigsList,
+  sortSavedConfigsByRecent,
   buildBackupBundle,
   downloadJsonFile,
   formatSavedTimestamp,
@@ -810,11 +811,21 @@ function startPlacing(catalogId) {
   const mesh = createFurnitureMesh(cat, state.placingFinish);
   mesh.traverse((c) => {
     if (c.isMesh && c.material) {
-      c.material = c.material.clone();
-      c.material.transparent = true;
-      c.material.opacity = 0.72;
+      if (Array.isArray(c.material)) {
+        c.material = c.material.map((mat) => {
+          const cloned = mat.clone();
+          cloned.transparent = true;
+          cloned.opacity = 0.72;
+          return cloned;
+        });
+        c.userData.origColor = c.material.map((mat) => (mat.color ? mat.color.clone() : new THREE.Color(0xffffff)));
+      } else {
+        c.material = c.material.clone();
+        c.material.transparent = true;
+        c.material.opacity = 0.72;
+        c.userData.origColor = c.material.color ? c.material.color.clone() : new THREE.Color(0xffffff);
+      }
       c.castShadow = false;
-      c.userData.origColor = c.material.color ? c.material.color.clone() : new THREE.Color(0xffffff);
       ghostMeshNodes.push(c);
     }
   });
@@ -848,18 +859,26 @@ function clearGhost() {
 function applyGhostTint(mode) {
   const red = new THREE.Color(0xdc2626);
   const amber = new THREE.Color(0xd97706);
+  const tintOne = (mat, orig) => {
+    if (!orig || !mat?.color) return;
+    if (mode === 'error') {
+      mat.color.copy(orig).lerp(red, 0.72);
+      mat.opacity = 0.78;
+    } else if (mode === 'warn') {
+      mat.color.copy(orig).lerp(amber, 0.52);
+      mat.opacity = 0.76;
+    } else {
+      mat.color.copy(orig);
+      mat.opacity = 0.72;
+    }
+  };
   for (const m of ghostMeshNodes) {
     const orig = m.userData.origColor;
-    if (!orig || !m.material?.color) continue;
-    if (mode === 'error') {
-      m.material.color.copy(orig).lerp(red, 0.72);
-      m.material.opacity = 0.78;
-    } else if (mode === 'warn') {
-      m.material.color.copy(orig).lerp(amber, 0.52);
-      m.material.opacity = 0.76;
+    if (!orig) continue;
+    if (Array.isArray(m.material)) {
+      m.material.forEach((mat, idx) => tintOne(mat, Array.isArray(orig) ? orig[idx] : orig));
     } else {
-      m.material.color.copy(orig);
-      m.material.opacity = 0.72;
+      tintOne(m.material, orig);
     }
   }
 }
@@ -3868,13 +3887,14 @@ function initSaveSlotsUI() {
         }
       }
       if (recovered.length > 0) {
-        savedConfigs = recovered;
+        savedConfigs = sortSavedConfigsByRecent(recovered);
         renderAllSavedPlansUI();
       }
     }
   });
 
   const persistLibrary = (skipCloudPush = false) => {
+    savedConfigs = sortSavedConfigsByRecent(savedConfigs);
     persistSavedConfigsList(savedConfigs);
     renderAllSavedPlansUI();
     if (!skipCloudPush) scheduleGoogleCloudPush();
@@ -3947,9 +3967,10 @@ function initSaveSlotsUI() {
     reader.readAsText(file);
   };
 
-  // Render BOTH the Left Rail compact Saved Plans list AND the Modal full library
+  // Render BOTH the Left Rail compact Saved Plans list AND the Modal full library (always sorted most recent first)
   renderAllSavedPlansUI = () => {
-    // 1. Left Rail Quick Switcher (top 3 saved plans)
+    savedConfigs = sortSavedConfigsByRecent(savedConfigs);
+    // 1. Left Rail Quick Switcher (top 3 most recent saved plans)
     const railList = document.getElementById('save-slots-list');
     if (railList) {
       railList.innerHTML = '';
