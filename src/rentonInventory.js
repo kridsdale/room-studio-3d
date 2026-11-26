@@ -4092,15 +4092,15 @@ export const RENTON_LIVE_CATALOG = [
     "priceTag": null,
     "w": 43.3,
     "d": 10.3,
-    "h": 13.7,
+    "h": 2,
     "defaultFinish": "white",
     "finishes": [
       "white",
       "oak",
       "blackBrown",
-      "darkGrey"
+      "stainedOak"
     ],
-    "meshType": "eket_wall",
+    "meshType": "wall_shelf_plank",
     "subtitle": "Wall shelf · 43 1/4x10 1/4 \"",
     "itemNo": "90282180",
     "skuFormatted": "902.821.80",
@@ -4110,7 +4110,7 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": false,
     "stackable": false,
     "wallMounted": true,
-    "mountHeightIn": 54,
+    "mountHeightIn": 56,
     "liveRenton": true
   },
   {
@@ -4123,15 +4123,15 @@ export const RENTON_LIVE_CATALOG = [
     "priceTag": null,
     "w": 23.6,
     "d": 7.9,
-    "h": 13.7,
-    "defaultFinish": "beige",
+    "h": 8.5,
+    "defaultFinish": "oak",
     "finishes": [
-      "beige",
-      "white",
       "oak",
-      "blackBrown"
+      "birch",
+      "walnut",
+      "white"
     ],
-    "meshType": "eket_wall",
+    "meshType": "wall_shelf_bracket",
     "subtitle": "Wall shelf · 23 5/8x7 7/8 \"",
     "itemNo": "30601689",
     "skuFormatted": "306.016.89",
@@ -4141,8 +4141,9 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": false,
     "stackable": false,
     "wallMounted": true,
-    "mountHeightIn": 54,
-    "liveRenton": true
+    "mountHeightIn": 52,
+    "liveRenton": true,
+    "bracketStyle": "end_wood"
   },
   {
     "id": "renton_50282182",
@@ -4154,15 +4155,15 @@ export const RENTON_LIVE_CATALOG = [
     "priceTag": null,
     "w": 74.8,
     "d": 10.3,
-    "h": 13.7,
+    "h": 2,
     "defaultFinish": "white",
     "finishes": [
       "white",
       "oak",
       "blackBrown",
-      "darkGrey"
+      "stainedOak"
     ],
-    "meshType": "eket_wall",
+    "meshType": "wall_shelf_plank",
     "subtitle": "Wall shelf · 74 3/4x10 1/4 \"",
     "itemNo": "50282182",
     "skuFormatted": "502.821.82",
@@ -4172,7 +4173,7 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": false,
     "stackable": false,
     "wallMounted": true,
-    "mountHeightIn": 54,
+    "mountHeightIn": 56,
     "liveRenton": true
   },
   {
@@ -4184,16 +4185,15 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 11.8,
-    "d": 74.8,
-    "h": 13.7,
+    "d": 11,
+    "h": 74.8,
     "defaultFinish": "white",
     "finishes": [
       "white",
       "oak",
-      "blackBrown",
-      "darkGrey"
+      "blackBrown"
     ],
-    "meshType": "eket_wall",
+    "meshType": "wall_shelf_column",
     "subtitle": "Wall shelf unit · 11 3/4x74 3/4 \"",
     "itemNo": "60282186",
     "skuFormatted": "602.821.86",
@@ -4203,7 +4203,7 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": false,
     "stackable": false,
     "wallMounted": true,
-    "mountHeightIn": 54,
+    "mountHeightIn": 12,
     "liveRenton": true
   },
   {
@@ -4221,10 +4221,9 @@ export const RENTON_LIVE_CATALOG = [
     "finishes": [
       "sage",
       "white",
-      "oak",
-      "blackBrown"
+      "matteBlack"
     ],
-    "meshType": "eket_wall",
+    "meshType": "wall_shelf_tiers",
     "subtitle": "Wall shelf · 23 5/8x6 3/8x29 1/8 \"",
     "itemNo": "70595785",
     "skuFormatted": "705.957.85",
@@ -4234,8 +4233,9 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": false,
     "stackable": false,
     "wallMounted": true,
-    "mountHeightIn": 54,
-    "liveRenton": true
+    "mountHeightIn": 48,
+    "liveRenton": true,
+    "tierStyle": "wire_3"
   },
   {
     "id": "renton_30381852",
@@ -4246,16 +4246,16 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 14.6,
-    "d": 14.6,
-    "h": 13.7,
-    "defaultFinish": "beige",
+    "d": 3.8,
+    "h": 14.6,
+    "defaultFinish": "birch",
     "finishes": [
-      "beige",
-      "white",
+      "birch",
+      "pine",
       "oak",
-      "blackBrown"
+      "white"
     ],
-    "meshType": "eket_wall",
+    "meshType": "wall_shelf_tiers",
     "subtitle": "Wall shelf · 14 5/8x14 5/8 \"",
     "itemNo": "30381852",
     "skuFormatted": "303.818.52",
@@ -4265,8 +4265,9 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": false,
     "stackable": false,
     "wallMounted": true,
-    "mountHeightIn": 54,
-    "liveRenton": true
+    "mountHeightIn": 52,
+    "liveRenton": true,
+    "tierStyle": "staggered"
   },
   {
     "id": "renton_70421238",
@@ -4278,15 +4279,15 @@ export const RENTON_LIVE_CATALOG = [
     "priceTag": null,
     "w": 31.5,
     "d": 7.9,
-    "h": 30,
+    "h": 1,
     "defaultFinish": "white",
     "finishes": [
       "white",
+      "walnut",
       "oak",
-      "blackBrown",
-      "darkGrey"
+      "blackBrown"
     ],
-    "meshType": "dresser_tall",
+    "meshType": "wall_shelf_plank",
     "subtitle": "Shelf · 31 1/2x7 7/8 \"",
     "itemNo": "70421238",
     "skuFormatted": "704.212.38",
@@ -4295,8 +4296,9 @@ export const RENTON_LIVE_CATALOG = [
     "rentonStock": "HIGH_IN_STOCK",
     "isSurface": true,
     "stackable": false,
-    "wallMounted": false,
-    "liveRenton": true
+    "wallMounted": true,
+    "liveRenton": true,
+    "mountHeightIn": 56
   },
   {
     "id": "renton_50282177",
@@ -4308,15 +4310,15 @@ export const RENTON_LIVE_CATALOG = [
     "priceTag": null,
     "w": 11.8,
     "d": 10.3,
-    "h": 13.7,
+    "h": 2,
     "defaultFinish": "white",
     "finishes": [
       "white",
       "oak",
       "blackBrown",
-      "darkGrey"
+      "stainedOak"
     ],
-    "meshType": "eket_wall",
+    "meshType": "wall_shelf_plank",
     "subtitle": "Wall shelf · 11 3/4x10 1/4 \"",
     "itemNo": "50282177",
     "skuFormatted": "502.821.77",
@@ -4326,7 +4328,7 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": false,
     "stackable": false,
     "wallMounted": true,
-    "mountHeightIn": 54,
+    "mountHeightIn": 56,
     "liveRenton": true
   },
   {
@@ -4337,17 +4339,17 @@ export const RENTON_LIVE_CATALOG = [
     "price": 20,
     "prevPrice": null,
     "priceTag": null,
-    "w": 27,
-    "d": 6,
-    "h": 6,
-    "defaultFinish": "white",
+    "w": 27.5,
+    "d": 3.5,
+    "h": 6.25,
+    "defaultFinish": "pine",
     "finishes": [
+      "pine",
+      "birch",
       "white",
-      "oak",
-      "blackBrown",
-      "darkGrey"
+      "oak"
     ],
-    "meshType": "dresser_tall",
+    "meshType": "wall_ledge",
     "subtitle": "Wall storage · 27 ½x3 ½x6 ¼ \"",
     "itemNo": "00290778",
     "skuFormatted": "002.907.78",
@@ -4356,8 +4358,9 @@ export const RENTON_LIVE_CATALOG = [
     "rentonStock": "HIGH_IN_STOCK",
     "isSurface": true,
     "stackable": false,
-    "wallMounted": false,
-    "liveRenton": true
+    "wallMounted": true,
+    "liveRenton": true,
+    "mountHeightIn": 52
   },
   {
     "id": "renton_10549348",
@@ -4370,14 +4373,13 @@ export const RENTON_LIVE_CATALOG = [
     "w": 23.6,
     "d": 7.9,
     "h": 13.7,
-    "defaultFinish": "beige",
+    "defaultFinish": "jute",
     "finishes": [
-      "beige",
-      "white",
-      "oak",
-      "blackBrown"
+      "jute",
+      "birch",
+      "oak"
     ],
-    "meshType": "eket_wall",
+    "meshType": "wall_shelf_tiers",
     "subtitle": "Wall shelf · 23 5/8x7 7/8 \"",
     "itemNo": "10549348",
     "skuFormatted": "105.493.48",
@@ -4387,8 +4389,9 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": false,
     "stackable": false,
     "wallMounted": true,
-    "mountHeightIn": 54,
-    "liveRenton": true
+    "mountHeightIn": 52,
+    "liveRenton": true,
+    "tierStyle": "rattan_2"
   },
   {
     "id": "renton_00550196",
@@ -4399,16 +4402,15 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 19.6,
-    "d": 20.5,
-    "h": 13.7,
+    "d": 5.5,
+    "h": 20.5,
     "defaultFinish": "matteBlack",
     "finishes": [
       "matteBlack",
       "white",
-      "oak",
-      "blackBrown"
+      "darkGrey"
     ],
-    "meshType": "eket_wall",
+    "meshType": "wall_shelf_tiers",
     "subtitle": "Wall shelf · 19 5/8x20 1/2 \"",
     "itemNo": "00550196",
     "skuFormatted": "005.501.96",
@@ -4418,8 +4420,9 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": false,
     "stackable": false,
     "wallMounted": true,
-    "mountHeightIn": 54,
-    "liveRenton": true
+    "mountHeightIn": 50,
+    "liveRenton": true,
+    "tierStyle": "wire_2"
   },
   {
     "id": "renton_59491157",
@@ -4431,15 +4434,15 @@ export const RENTON_LIVE_CATALOG = [
     "priceTag": null,
     "w": 31.5,
     "d": 7.9,
-    "h": 13.7,
-    "defaultFinish": "matteBlack",
+    "h": 8.5,
+    "defaultFinish": "walnut",
     "finishes": [
-      "matteBlack",
+      "walnut",
       "white",
       "oak",
       "blackBrown"
     ],
-    "meshType": "eket_wall",
+    "meshType": "wall_shelf_bracket",
     "subtitle": "Wall shelf · 31 1/2x7 7/8 \"",
     "itemNo": "59491157",
     "skuFormatted": "594.911.57",
@@ -4449,8 +4452,9 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": false,
     "stackable": false,
     "wallMounted": true,
-    "mountHeightIn": 54,
-    "liveRenton": true
+    "mountHeightIn": 52,
+    "liveRenton": true,
+    "bracketStyle": "ramshult"
   },
   {
     "id": "renton_90574800",

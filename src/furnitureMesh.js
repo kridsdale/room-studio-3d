@@ -2066,6 +2066,121 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
     const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.065, 10, 8), new THREE.MeshStandardMaterial({ color: 0x4b7752, roughness: 0.75 }));
     leaf.position.set(w / 4, y0 + t + 0.125, 0.02);
     group.add(pot, leaf);
+  } else if (type === 'wall_shelf_plank') {
+    // Sleek floating wall shelf plank (LACK, BERGSHULT) — crisp horizontal plane/slab with concealed wall cleat!
+    const plankH = Math.max(0.022, Math.min(0.062, h));
+    addBox(group, w, plankH, d, primaryMat, 0, plankH / 2, 0);
+    // Subtle recessed shadow reveal along rear wall contact line
+    addBox(group, w - 0.024, plankH * 0.42, 0.004, recessMat, 0, plankH * 0.25, -d / 2 + 0.002, false);
+  } else if (type === 'wall_shelf_bracket') {
+    // Thin wall shelf plank supported by sleek brackets (BERGSHULT/RAMSHULT L-brackets or KLAVRESTRÖM oak end-brackets)
+    const plankH = 0.024;
+    const style = catalogEntry.bracketStyle || 'ramshult';
+    if (style === 'end_wood') {
+      // KLAVRESTRÖM: thin oak plank slotted between two slim vertical solid-oak end brackets
+      const shelfY = h * 0.42;
+      const brkW = 0.024;
+      const brkD = Math.min(d * 0.72, 0.12);
+      addBox(group, w, plankH, d, primaryMat, 0, shelfY, 0);
+      for (const sx of [-1, 1]) {
+        const bx = sx * (w / 2 - brkW / 2 - 0.018);
+        addBox(group, brkW, h, brkD, primaryMat, bx, h / 2, -d / 2 + brkD / 2 + 0.004);
+      }
+    } else {
+      // BERGSHULT / RAMSHULT: crisp top shelf plank + two slim matte-black RAMSHULT L-brackets underneath
+      const shelfY = h - plankH / 2;
+      addBox(group, w, plankH, d, primaryMat, 0, shelfY, 0);
+      const brkH = Math.max(0.08, h - plankH);
+      const brkT = 0.018;
+      const armD = d * 0.78;
+      const insetX = Math.min(0.14, w * 0.16);
+      for (const sx of [-1, 1]) {
+        const bx = sx * (w / 2 - insetX);
+        // Vertical wall leg
+        addBox(group, brkT, brkH, 0.018, darkMetal, bx, brkH / 2, -d / 2 + 0.009);
+        // Horizontal support arm right under plank
+        addBox(group, brkT, 0.016, armD, darkMetal, bx, h - plankH - 0.008, -d / 2 + armD / 2);
+        // Angled gusset strut
+        const strutLen = Math.hypot(brkH * 0.52, armD * 0.45);
+        const strut = addBox(group, brkT * 0.75, 0.014, strutLen, darkMetal, bx, h - plankH - brkH * 0.28, -d / 2 + armD * 0.25, false);
+        strut.rotation.x = Math.atan2(brkH * 0.52, armD * 0.45);
+      }
+    }
+  } else if (type === 'wall_shelf_column') {
+    // Tall vertical floating shelf column (LACK Wall shelf unit 11¾" × 74¾") — back rail + 7 crisp open floating planes!
+    const backT = 0.022;
+    const shelfT = 0.036;
+    const nShelves = 7;
+    addBox(group, w, h, backT, primaryMat, 0, h / 2, -d / 2 + backT / 2);
+    for (let i = 0; i < nShelves; i++) {
+      const sy = shelfT / 2 + (i / (nShelves - 1)) * (h - shelfT);
+      addBox(group, w, shelfT, d - backT, primaryMat, 0, sy, backT / 2);
+    }
+  } else if (type === 'wall_shelf_tiers') {
+    // Open multi-tier floating wall shelves — thin planes + minimalist wire/slat supports (zero box enclosure!)
+    const tierStyle = catalogEntry.tierStyle || 'wire_3';
+    if (tierStyle === 'staggered') {
+      // LUSTIGT: slim vertical central birch wall post + 5 ultra-thin staggered floating slats
+      const postW = 0.044;
+      const postT = 0.018;
+      const slatT = 0.012;
+      addBox(group, postW, h, postT, primaryMat, 0, h / 2, -d / 2 + postT / 2);
+      const offsets = [-0.04, 0.05, -0.02, 0.04, -0.05];
+      for (let i = 0; i < 5; i++) {
+        const sy = 0.045 + (i / 4) * (h - 0.09);
+        const sw = w * (0.78 + (i % 2) * 0.14);
+        addBox(group, sw, slatT, d, primaryMat, offsets[i] * w, sy, 0);
+      }
+    } else if (tierStyle === 'rattan_2') {
+      // FRYKSÅS: 2 thin open natural shelves joined by slim curved side rails (airy, no solid sides/back)
+      const shelfT = 0.018;
+      const railT = 0.016;
+      addBox(group, w, shelfT, d, primaryMat, 0, shelfT / 2, 0);
+      addBox(group, w, shelfT, d, primaryMat, 0, h * 0.56, 0);
+      for (const sx of [-1, 1]) {
+        const rx = sx * (w / 2 - railT / 2);
+        addBox(group, railT, h, railT, primaryMat, rx, h / 2, -d / 2 + railT / 2);
+        addBox(group, railT, h * 0.72, railT, primaryMat, rx, h * 0.36, d / 2 - railT / 2);
+        addBox(group, railT, railT, d, primaryMat, rx, h * 0.72, 0);
+      }
+    } else {
+      // FÄRGSÄTTARE (3-tier wire) or APOTEKARE (2-tier wire): thin metal shelf planes + slender vertical wire frames!
+      const nTiers = tierStyle === 'wire_2' ? 2 : 3;
+      const wireMat = tierStyle === 'wire_2' ? darkMetal : primaryMat;
+      const shelfT = 0.014;
+      const wireR = 0.0055;
+      const lipH = tierStyle === 'wire_2' ? 0.026 : 0.008;
+      for (let i = 0; i < nTiers; i++) {
+        const sy = 0.05 + (i / Math.max(1, nTiers - 1)) * (h - 0.14);
+        addBox(group, w - 0.016, shelfT, d - 0.01, wireMat, 0, sy, 0);
+        if (lipH > 0.012) {
+          addBox(group, w - 0.016, lipH, 0.005, wireMat, 0, sy + lipH / 2, d / 2 - 0.007, false);
+          addBox(group, w - 0.016, lipH, 0.005, wireMat, 0, sy + lipH / 2, -d / 2 + 0.007, false);
+        }
+      }
+      // Slender open wire side ladders
+      for (const sx of [-1, 1]) {
+        const lx = sx * (w / 2 - 0.008);
+        for (const sz of [-1, 1]) {
+          const rod = new THREE.Mesh(new THREE.CylinderGeometry(wireR, wireR, h - 0.02, 8), wireMat);
+          rod.position.set(lx, h / 2, sz * (d / 2 - 0.012));
+          group.add(rod);
+        }
+        // Top & bottom wire arch bars
+        addBox(group, wireR * 2, wireR * 2, d - 0.02, wireMat, lx, h - 0.012, 0, false);
+        addBox(group, wireR * 2, wireR * 2, d - 0.02, wireMat, lx, 0.012, 0, false);
+      }
+    }
+  } else if (type === 'wall_ledge') {
+    // FLISAT / MOSSLANDA slim open wall picture & book ledge (thin shelf plane + low open rail!)
+    const t = 0.016;
+    addBox(group, w, t, d, primaryMat, 0, t / 2, 0);
+    addBox(group, w, h, t * 0.85, primaryMat, 0, h / 2, -d / 2 + t * 0.42);
+    // Slim horizontal front retaining bar & tiny end caps
+    addBox(group, w - t * 2, 0.024, t * 0.75, primaryMat, 0, h * 0.62, d / 2 - t * 0.4);
+    for (const sx of [-1, 1]) {
+      addBox(group, t, h * 0.78, d, primaryMat, sx * (w / 2 - t / 2), h * 0.39, 0);
+    }
   } else if (type === 'alex' || type === 'dresser_wide' || type === 'dresser_tall') {
     addBox(group, w, h, d - 0.024, primaryMat, 0, h / 2 + 0.001, -0.012);
     const cols = type === 'dresser_wide' ? 2 : 1;

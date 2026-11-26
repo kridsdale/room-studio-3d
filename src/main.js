@@ -1530,8 +1530,9 @@ function setSelectedMountHeight(targetIn, saveUndo = true) {
   if (!item) return;
   const cat = ALL_CATALOG[item.catalogId];
   if (!cat || !cat.wallMounted) return;
-  const maxH = Math.max(24, Math.floor((state.room.heightIn || 96) - (cat.h || 14) - 1));
-  const clamped = Math.max(18, Math.min(maxH, Math.round(Number(targetIn) || (cat.mountHeightIn || 54))));
+  const minH = (cat.h || 0) > 48 ? 4 : 18;
+  const maxH = Math.max(minH, Math.floor((state.room.heightIn || 96) - (cat.h || 14) - 1));
+  const clamped = Math.max(minH, Math.min(maxH, Math.round(Number(targetIn) || (cat.mountHeightIn || 54))));
   if (item.mountHeightIn === clamped) return;
   if (saveUndo) pushUndoSnapshot();
   item.mountHeightIn = clamped;
