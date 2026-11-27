@@ -1377,10 +1377,10 @@ window.addEventListener('keydown', (e) => {
       ? NUDGE_FINE_CM
       : NUDGE_STEP_CM;
     const stepIn = stepCm * CM_TO_IN;
-    if (e.key === 'ArrowUp') nudgeSelected(0, -stepIn);       // North (-Z)
-    else if (e.key === 'ArrowDown') nudgeSelected(0, stepIn); // South (+Z)
-    else if (e.key === 'ArrowLeft') nudgeSelected(-stepIn, 0);// West (-X)
-    else if (e.key === 'ArrowRight') nudgeSelected(stepIn, 0);// East (+X)
+    if (e.key === 'ArrowUp') nudgeSelected(stepIn, 0);        // North (+X)
+    else if (e.key === 'ArrowDown') nudgeSelected(-stepIn, 0);// South (-X)
+    else if (e.key === 'ArrowLeft') nudgeSelected(0, -stepIn);// West (-Z)
+    else if (e.key === 'ArrowRight') nudgeSelected(0, stepIn);// East (+Z)
     return;
   }
 
@@ -1791,7 +1791,7 @@ function setCameraView(mode) {
       target: new THREE.Vector3(0, 0.45, 0),
     };
   } else if (mode === '2d') {
-    // Near-orthographic narrow-FOV North-up top-down view; near=2.0 gives 25x depth precision at dist=20.6m!
+    // Near-orthographic narrow-FOV True North-Up top-down view (+X North up, +Z East main door right, -X South bent wall down, -Z West window left)
     if (camera.fov !== 24 || camera.near !== 2.0) {
       camera.fov = 24;
       camera.near = 2.0;
@@ -1806,13 +1806,13 @@ function setCameraView(mode) {
     controls.minPolarAngle = 0;
     controls.maxPolarAngle = Math.PI / 2 - 0.02;
     cameraLerp = null;
-    const dist = Math.max(20.6, L * 4.58);
-    const zCenter = 0.65; // Shift room slightly up clear of bottom Buy Mode dock
+    const dist = Math.max(17.2, L * 3.82);
+    const xCenter = -0.62; // Shift room slightly up toward North (+X) so South & SE bend labels clear Buy Mode dock
     const prevDamp = controls.enableDamping;
     controls.enableDamping = false;
     controls.update(); // Flush any residual sphericalDelta from Eye Level or orbit drag!
-    camera.position.set(0, dist, zCenter + 0.08);
-    controls.target.set(0, 0, zCenter);
+    camera.position.set(xCenter - 0.08, dist, 0);
+    controls.target.set(xCenter, 0, 0);
     camera.up.set(0, 1, 0);
     controls.update();
     controls.enableDamping = prevDamp;
@@ -1894,21 +1894,21 @@ function updateFloatingLabels() {
   const flareW = (state.room.swFlareWidthIn || 0) * IN_TO_M;
   const flareL = (state.room.swFlareLengthIn || 0) * IN_TO_M;
 
-  // 1. Exterior Room Wall Dimensions (all 5 walls of the non-rectangular floor!)
+  // 1. Exterior Room Wall Dimensions (all 5 walls — South has the 15° SE bend, East has Main Door & Closet!)
   if (state.showDimensions && state.viewMode !== 'fp' && state.wallMode !== 'up') {
-    const straightWestIn = state.room.lengthIn - (state.room.swFlareLengthIn || 0);
+    const straightSouthIn = state.room.lengthIn - (state.room.swFlareLengthIn || 0);
     const angledLenIn = Math.hypot(state.room.swFlareWidthIn || 0, state.room.swFlareLengthIn || 0);
-    const southWidthIn = state.room.widthIn + (state.room.swFlareWidthIn || 0);
+    const eastWidthIn = state.room.widthIn + (state.room.swFlareWidthIn || 0);
     const wallTags = [
-      { pos: new THREE.Vector3(0, 0.08, -L / 2 - 0.34), text: `N · ${formatLen(state.room.widthIn)}` },
-      { pos: new THREE.Vector3(-W / 2 - 0.42, 0.08, -flareL / 2), text: `W · ${formatLen(straightWestIn)}` },
-      { pos: new THREE.Vector3(W / 2 + 0.42, 0.08, 0), text: `E · ${formatLen(state.room.lengthIn)}` },
-      { pos: new THREE.Vector3(-flareW / 2, 0.08, L / 2 + 0.34), text: `S · ${formatLen(southWidthIn)}` },
+      { pos: new THREE.Vector3(0, 0.08, -L / 2 - 0.34), text: `W · ${formatLen(state.room.widthIn)}` },
+      { pos: new THREE.Vector3(-W / 2 - 0.42, 0.08, -flareL / 2), text: `S · ${formatLen(straightSouthIn)}` },
+      { pos: new THREE.Vector3(W / 2 + 0.42, 0.08, 0), text: `N · ${formatLen(state.room.lengthIn)}` },
+      { pos: new THREE.Vector3(-flareW / 2, 0.08, L / 2 + 0.34), text: `E · ${formatLen(eastWidthIn)}` },
     ];
     if (angledLenIn > 1) {
       wallTags.push({
         pos: new THREE.Vector3(-W / 2 - flareW / 2 - 0.48, 0.08, L / 2 - flareL / 2),
-        text: `SW · ${formatLen(angledLenIn)} (15°)`,
+        text: `SE · ${formatLen(angledLenIn)} (15°)`,
       });
     }
     for (const wt of wallTags) {
@@ -3425,10 +3425,10 @@ function initUI() {
       : NUDGE_STEP_CM;
     return cm * CM_TO_IN;
   };
-  document.getElementById('nudge-n').onclick = (e) => nudgeSelected(0, -stepInFromEvent(e));
-  document.getElementById('nudge-s').onclick = (e) => nudgeSelected(0, stepInFromEvent(e));
-  document.getElementById('nudge-w').onclick = (e) => nudgeSelected(-stepInFromEvent(e), 0);
-  document.getElementById('nudge-e').onclick = (e) => nudgeSelected(stepInFromEvent(e), 0);
+  document.getElementById('nudge-n').onclick = (e) => nudgeSelected(stepInFromEvent(e), 0);
+  document.getElementById('nudge-s').onclick = (e) => nudgeSelected(-stepInFromEvent(e), 0);
+  document.getElementById('nudge-w').onclick = (e) => nudgeSelected(0, -stepInFromEvent(e));
+  document.getElementById('nudge-e').onclick = (e) => nudgeSelected(0, stepInFromEvent(e));
 
   document.getElementById('insp-expand-btn').onclick = () => {
     const item = state.items.find((i) => i.uid === state.selectedUid);

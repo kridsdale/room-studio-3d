@@ -296,14 +296,14 @@ export function checkPlacementStatus(candidate, allItems, catalogMap, room) {
       const nwX0 = -halfW + room.northWindow.offsetFromWestIn;
       const nwX1 = nwX0 + room.northWindow.widthIn;
       if (aabb.minZ < -halfL + 10 && aabb.maxX > nwX0 + 4 && aabb.minX < nwX1 - 4) {
-        warnings.push('Blocks North window light');
+        warnings.push('Blocks West window light');
       }
     }
     if (room.eastWindow && topH > room.eastWindow.sillIn + 6) {
       const ewZ1 = halfL - room.eastWindow.offsetFromSouthIn;
       const ewZ0 = ewZ1 - room.eastWindow.widthIn;
       if (aabb.maxX > halfW - 10 && aabb.maxZ > ewZ0 + 4 && aabb.minZ < ewZ1 - 4) {
-        warnings.push('Blocks East window light');
+        warnings.push('Blocks North window light');
       }
     }
   }
@@ -325,7 +325,7 @@ export function checkPlacementStatus(candidate, allItems, catalogMap, room) {
       const oAabb = getOBBAABB(getOBBCorners(other.x, other.z, oDim.w, oDim.d, other.rotDeg));
       const zOverlap = Math.min(aabb.maxZ, oAabb.maxZ) - Math.max(aabb.minZ, oAabb.minZ);
       const xGap = Math.max(oAabb.minX - aabb.maxX, aabb.minX - oAabb.maxX);
-      // Flag true cross-aisle squeeze (between 4" and 26" wide over >= 18" of shared N-S length)
+      // Flag true cross-aisle squeeze (between 4" and 26" wide over >= 18" of shared E-W length)
       if (zOverlap >= 18 && xGap >= 4 && xGap < 26) {
         warnings.push(`Tight walkway (${Math.round(xGap)}" < 28") near ${oCat.name}`);
         break;
@@ -333,12 +333,12 @@ export function checkPlacementStatus(candidate, allItems, catalogMap, room) {
     }
   }
 
-  // 7. Distance to all walls (using exact angled West wall distance at item Z)
+  // 7. True compass distance to all walls (+X = North, -X = South w/ 15° SE bend, -Z = West window, +Z = East main door/closet)
   const distances = {
-    west: Math.max(0, westClear),
-    east: Math.max(0, halfW - aabb.maxX),
-    north: Math.max(0, aabb.minZ - (-halfL)),
-    south: Math.max(0, halfL - aabb.maxZ),
+    north: Math.max(0, halfW - aabb.maxX),
+    south: Math.max(0, westClear),
+    west: Math.max(0, aabb.minZ - (-halfL)),
+    east: Math.max(0, halfL - aabb.maxZ),
   };
 
   return {

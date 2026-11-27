@@ -1886,8 +1886,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 35.4,
-    "d": 77.5,
-    "h": 79.5,
+    "d": 14.6,
+    "h": 77.5,
     "defaultFinish": "white",
     "finishes": [
       "white",
@@ -1917,8 +1917,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 23.6,
-    "d": 74.8,
-    "h": 79.5,
+    "d": 13.8,
+    "h": 74.8,
     "defaultFinish": "white",
     "finishes": [
       "white",
@@ -1948,8 +1948,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 23.6,
-    "d": 70.9,
-    "h": 79.5,
+    "d": 9.5,
+    "h": 70.9,
     "defaultFinish": "white",
     "finishes": [
       "white",
@@ -2165,8 +2165,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 24.4,
-    "d": 65,
-    "h": 79.5,
+    "d": 9.5,
+    "h": 65,
     "defaultFinish": "walnut",
     "finishes": [
       "walnut",
@@ -2257,8 +2257,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 23.6,
-    "d": 55.1,
-    "h": 79.5,
+    "d": 14.8,
+    "h": 55.1,
     "defaultFinish": "slateBlue",
     "finishes": [
       "slateBlue",
@@ -2288,8 +2288,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 25.6,
-    "d": 78.4,
-    "h": 79.5,
+    "d": 13.4,
+    "h": 78.4,
     "defaultFinish": "slateBlue",
     "finishes": [
       "slateBlue",
@@ -2381,8 +2381,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 30.1,
-    "d": 57.6,
-    "h": 30.2,
+    "d": 15.4,
+    "h": 57.6,
     "defaultFinish": "white",
     "finishes": [
       "white",
@@ -2401,7 +2401,7 @@ export const RENTON_LIVE_CATALOG = [
     "stackable": false,
     "wallMounted": false,
     "cols": 2,
-    "rows": 2,
+    "rows": 4,
     "liveRenton": true
   },
   {
@@ -2413,8 +2413,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 30.1,
-    "d": 30.1,
-    "h": 30.2,
+    "d": 15.4,
+    "h": 30.1,
     "defaultFinish": "white",
     "finishes": [
       "white",
@@ -2445,8 +2445,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 16.4,
-    "d": 57.6,
-    "h": 30.2,
+    "d": 15.4,
+    "h": 57.6,
     "defaultFinish": "white",
     "finishes": [
       "white",
@@ -2464,8 +2464,8 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": true,
     "stackable": false,
     "wallMounted": false,
-    "cols": 2,
-    "rows": 2,
+    "cols": 1,
+    "rows": 4,
     "liveRenton": true
   },
   {
@@ -2477,8 +2477,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 43.9,
-    "d": 57.6,
-    "h": 30.2,
+    "d": 15.4,
+    "h": 57.6,
     "defaultFinish": "white",
     "finishes": [
       "white",
@@ -2496,8 +2496,8 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": true,
     "stackable": false,
     "wallMounted": false,
-    "cols": 2,
-    "rows": 2,
+    "cols": 3,
+    "rows": 4,
     "liveRenton": true
   },
   {
@@ -2509,8 +2509,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 30.1,
-    "d": 16.1,
-    "h": 30.2,
+    "d": 15.4,
+    "h": 16.4,
     "defaultFinish": "white",
     "finishes": [
       "white",
@@ -2529,7 +2529,7 @@ export const RENTON_LIVE_CATALOG = [
     "stackable": false,
     "wallMounted": false,
     "cols": 2,
-    "rows": 2,
+    "rows": 1,
     "liveRenton": true
   },
   {
@@ -2541,8 +2541,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 71.6,
-    "d": 71.6,
-    "h": 30.2,
+    "d": 15.4,
+    "h": 71.6,
     "defaultFinish": "walnut",
     "finishes": [
       "walnut",
@@ -2560,8 +2560,8 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": true,
     "stackable": false,
     "wallMounted": false,
-    "cols": 4,
-    "rows": 2,
+    "cols": 5,
+    "rows": 5,
     "liveRenton": true
   },
   {
@@ -2573,8 +2573,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 43.9,
-    "d": 43.9,
-    "h": 30.2,
+    "d": 15.4,
+    "h": 43.9,
     "defaultFinish": "white",
     "finishes": [
       "white",
@@ -2592,8 +2592,8 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": true,
     "stackable": false,
     "wallMounted": false,
-    "cols": 2,
-    "rows": 2,
+    "cols": 3,
+    "rows": 3,
     "liveRenton": true
   },
   {
@@ -2605,8 +2605,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 13,
-    "d": 13,
-    "h": 30.2,
+    "d": 14.5,
+    "h": 13,
     "defaultFinish": "white",
     "finishes": [
       "white",
@@ -2624,8 +2624,8 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": true,
     "stackable": false,
     "wallMounted": false,
-    "cols": 2,
-    "rows": 2,
+    "cols": 1,
+    "rows": 1,
     "liveRenton": true
   },
   {
@@ -2637,8 +2637,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 57.9,
-    "d": 57.6,
-    "h": 30.2,
+    "d": 15.4,
+    "h": 57.6,
     "defaultFinish": "white",
     "finishes": [
       "white",
@@ -2657,7 +2657,7 @@ export const RENTON_LIVE_CATALOG = [
     "stackable": false,
     "wallMounted": false,
     "cols": 4,
-    "rows": 2,
+    "rows": 4,
     "liveRenton": true
   },
   {
@@ -2669,8 +2669,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 57.8,
-    "d": 23.5,
-    "h": 30.2,
+    "d": 15.4,
+    "h": 23.5,
     "defaultFinish": "walnut",
     "finishes": [
       "walnut",
@@ -2689,7 +2689,7 @@ export const RENTON_LIVE_CATALOG = [
     "stackable": false,
     "wallMounted": false,
     "cols": 4,
-    "rows": 2,
+    "rows": 1,
     "liveRenton": true
   },
   {
@@ -2701,8 +2701,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 57.6,
-    "d": 30.1,
-    "h": 30.2,
+    "d": 15.4,
+    "h": 30.1,
     "defaultFinish": "beige",
     "finishes": [
       "beige",
@@ -2797,8 +2797,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 16.4,
-    "d": 16,
-    "h": 30.2,
+    "d": 15.4,
+    "h": 16.4,
     "defaultFinish": "white",
     "finishes": [
       "white",
@@ -2816,8 +2816,8 @@ export const RENTON_LIVE_CATALOG = [
     "isSurface": true,
     "stackable": false,
     "wallMounted": false,
-    "cols": 2,
-    "rows": 2,
+    "cols": 1,
+    "rows": 1,
     "liveRenton": true
   },
   {
@@ -2829,8 +2829,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 11.4,
-    "d": 34.6,
-    "h": 30,
+    "d": 14.2,
+    "h": 34.6,
     "defaultFinish": "white",
     "finishes": [
       "white",
@@ -4555,8 +4555,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 46.1,
-    "d": 69.3,
-    "h": 79.2,
+    "d": 21.6,
+    "h": 69.3,
     "defaultFinish": "walnut",
     "finishes": [
       "walnut",
@@ -4675,8 +4675,8 @@ export const RENTON_LIVE_CATALOG = [
     "prevPrice": null,
     "priceTag": null,
     "w": 31.1,
-    "d": 69.3,
-    "h": 79.2,
+    "d": 21.6,
+    "h": 69.3,
     "defaultFinish": "walnut",
     "finishes": [
       "walnut",

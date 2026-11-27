@@ -16,10 +16,10 @@ import {
 export const AGENT_QUICK_PROMPTS = [
   'Balance storage, aesthetics & walkway with TONSTAD + dual desks',
   'Arrange only my Considering hotlist cleanly',
-  'Dual office: both desks on West wall + loveseat on East',
-  'Dual office face-off (East + West) with 42" monitor desk',
-  'Dual office L-corner studio near the North window',
-  'Add TONSTAD Double Hutch on West wall & IDANÄS on East',
+  'Dual office: both desks on South wall + loveseat on North',
+  'Dual office face-off (North + South) with 42" monitor desk',
+  'Dual office L-corner studio near the West window',
+  'Add TONSTAD Double Hutch on South wall & IDANÄS on North',
   'Switch finishes to oak & off-white, evening lighting',
   'Audit clearances, chair aisle & IKEA budget',
 ];
@@ -128,23 +128,24 @@ function normDeg(deg) {
   return d;
 }
 
+// True compass mapping: +X = North (14'6" wall), +Z = East (main door & closet), -X = South (10'10" + 15° SE bend), -Z = West (9'3" window)
 function facingToRotDeg(facing) {
   switch ((facing || '').toLowerCase()) {
-    case 'south': case 's': case 'down': case 'door': return 0;
-    case 'east':  case 'e': case 'right': return 90;
-    case 'north': case 'n': case 'up': case 'window': return 180;
-    case 'west':  case 'w': case 'left': return 270;
+    case 'east':  case 'e': case 'right': case 'door': return 0;   // faces +Z (East / main door)
+    case 'north': case 'n': case 'up': return 90;                  // faces +X (North wall)
+    case 'west':  case 'w': case 'left': case 'window': return 180;// faces -Z (West wide window)
+    case 'south': case 's': case 'down': return 270;               // faces -X (South bent wall)
     default: return null;
   }
 }
 
 function wallDefaultFacingRot(wall) {
   switch ((wall || '').toLowerCase()) {
-    case 'north': return 0;   // faces South (into room)
-    case 'west':  return 90;  // faces East (into room)
-    case 'east':  return 270; // faces West (into room)
-    case 'south': return 180; // faces North (into room)
-    case 'sw':    return 75;  // faces ENE perpendicular to angled SW wall
+    case 'west':  return 0;   // on -Z West window wall, faces +Z East (into room)
+    case 'south': return 90;  // on -X South straight wall, faces +X North (into room)
+    case 'north': return 270; // on +X North wall, faces -X South (into room)
+    case 'east':  return 180; // on +Z East door/closet wall, faces -Z West (into room)
+    case 'se':    return 75;  // on angled SE bend wall, faces NNW into room
     default: return 0;
   }
 }
@@ -298,12 +299,12 @@ function resolvePaletteFinish(cat, paletteKey, explicitFinish) {
   return resolveFinishForCat(cat, pal[role] || pal.wood);
 }
 
-// Measure remaining continuous free wall runs (inches) on straight West, East, and North walls
+// Measure remaining continuous free wall runs (inches) on straight South (-X), North (+X), and West (-Z) walls
 function computeWallFreeRuns(items, room) {
   const halfW = room.widthIn / 2;
   const halfL = room.lengthIn / 2;
   const flareL = room.swFlareLengthIn || 44;
-  const straightWestMaxZ = halfL - flareL - 2;
+  const straightSouthMaxZ = halfL - flareL - 2;
   const closetSpan = 16;
 
   const freeSpanOnWall = (wall, minC, maxC) => {
@@ -315,9 +316,9 @@ function computeWallFreeRuns(items, room) {
       const rad = (it.rotDeg * Math.PI) / 180;
       const ex = (Math.abs(d.w * Math.cos(rad)) + Math.abs(d.d * Math.sin(rad))) / 2;
       const ez = (Math.abs(d.w * Math.sin(rad)) + Math.abs(d.d * Math.cos(rad))) / 2;
-      if (wall === 'west' && it.x - ex < -halfW + 18) blocked.push([it.z - ez, it.z + ez]);
-      else if (wall === 'east' && it.x + ex > halfW - 18) blocked.push([it.z - ez, it.z + ez]);
-      else if (wall === 'north' && it.z - ez < -halfL + 18) blocked.push([it.x - ex, it.x + ex]);
+      if (wall === 'south' && it.x - ex < -halfW + 18) blocked.push([it.z - ez, it.z + ez]);
+      else if (wall === 'north' && it.x + ex > halfW - 18) blocked.push([it.z - ez, it.z + ez]);
+      else if (wall === 'west' && it.z - ez < -halfL + 18) blocked.push([it.x - ex, it.x + ex]);
     }
     blocked.sort((a, b) => a[0] - b[0]);
     let cursor = minC;
@@ -343,9 +344,9 @@ function computeWallFreeRuns(items, room) {
   };
 
   return {
-    westStraight: freeSpanOnWall('west', -halfL, straightWestMaxZ),
-    east: freeSpanOnWall('east', -halfL, halfL - closetSpan),
-    north: freeSpanOnWall('north', -halfW, halfW),
+    southStraight: freeSpanOnWall('south', -halfL, straightSouthMaxZ),
+    north: freeSpanOnWall('north', -halfL, halfL - closetSpan),
+    west: freeSpanOnWall('west', -halfW, halfW),
   };
 }
 
@@ -726,13 +727,13 @@ function buildFlushWallCandidates(catalogId, dims, wall, rot, otherItems, room) 
     const oEx = (Math.abs(oDim.w * Math.cos(oRad)) + Math.abs(oDim.d * Math.sin(oRad))) / 2;
     const oEz = (Math.abs(oDim.w * Math.sin(oRad)) + Math.abs(oDim.d * Math.cos(oRad))) / 2;
 
-    if (wall === 'west' && other.x - oEx < -halfW + 8) {
+    if (wall === 'south' && other.x - oEx < -halfW + 8) {
       out.push({ x: -halfW + myEx, z: other.z - oEz - myEz - 0.5, rotDeg: rot, flush: true });
       out.push({ x: -halfW + myEx, z: other.z + oEz + myEz + 0.5, rotDeg: rot, flush: true });
-    } else if (wall === 'east' && other.x + oEx > halfW - 8) {
+    } else if (wall === 'north' && other.x + oEx > halfW - 8) {
       out.push({ x: halfW - myEx, z: other.z - oEz - myEz - 0.5, rotDeg: rot, flush: true });
       out.push({ x: halfW - myEx, z: other.z + oEz + myEz + 0.5, rotDeg: rot, flush: true });
-    } else if (wall === 'north' && other.z - oEz < -halfL + 8) {
+    } else if (wall === 'west' && other.z - oEz < -halfL + 8) {
       out.push({ x: other.x - oEx - myEx - 0.5, z: -halfL + myEz, rotDeg: rot, flush: true });
       out.push({ x: other.x + oEx + myEx + 0.5, z: -halfL + myEz, rotDeg: rot, flush: true });
     }
@@ -748,7 +749,7 @@ function findBestPlacement(catalogId, opts, items, room, excludeUid = null) {
   const halfW = room.widthIn / 2;
   const halfL = room.lengthIn / 2;
   const flareL = room.swFlareLengthIn || 44;
-  const straightWestMaxZ = halfL - flareL - 2;
+  const straightSouthMaxZ = halfL - flareL - 2;
   const otherItems = excludeUid ? items.filter((i) => i.uid !== excludeUid) : items;
 
   const wall = (opts.wall || '').toLowerCase();
@@ -760,10 +761,10 @@ function findBestPlacement(catalogId, opts, items, room, excludeUid = null) {
 
   const zoneBias = (x, z) => {
     if (!zone) return 0;
-    if (zone === 'north') return Math.max(0, (z + halfL) * 0.22);
-    if (zone === 'south') return Math.max(0, (halfL - z) * 0.22);
-    if (zone === 'west') return Math.max(0, (x + halfW) * 0.22);
-    if (zone === 'east') return Math.max(0, (halfW - x) * 0.22);
+    if (zone === 'west') return Math.max(0, (z + halfL) * 0.22);
+    if (zone === 'east') return Math.max(0, (halfL - z) * 0.22);
+    if (zone === 'south') return Math.max(0, (x + halfW) * 0.22);
+    if (zone === 'north') return Math.max(0, (halfW - x) * 0.22);
     if (zone === 'center') return Math.hypot(x, z + 6) * 0.2;
     return 0;
   };
@@ -838,13 +839,13 @@ function findBestPlacement(catalogId, opts, items, room, excludeUid = null) {
     }
   }
 
-  // Corner placements
+  // Corner placements (true compass: SW = (-X,-Z), NW = (+X,-Z), NE = (+X,+Z closet), SE = (-X,+Z bent entry))
   if (corner) {
     const cornerMap = {
-      nw: { x: -halfW + 16, z: -halfL + 16, rots: [0, 90] },
-      ne: { x: halfW - 16,  z: -halfL + 16, rots: [0, 270] },
-      se: { x: halfW - 16,  z: halfL - 32,  rots: [270, 180] },
-      sw: { x: -halfW + 14, z: straightWestMaxZ - 8, rots: [90, 75] },
+      sw: { x: -halfW + 16, z: -halfL + 16, rots: [0, 90] },
+      nw: { x: halfW - 16,  z: -halfL + 16, rots: [0, 270] },
+      ne: { x: halfW - 16,  z: halfL - 32,  rots: [270, 180] },
+      se: { x: -halfW + 14, z: straightSouthMaxZ - 8, rots: [90, 75] },
       center: { x: 0, z: -10, rots: [0, 90, 270] },
     };
     const cDef = cornerMap[corner] || cornerMap.center;
@@ -858,7 +859,7 @@ function findBestPlacement(catalogId, opts, items, room, excludeUid = null) {
     }
   }
 
-  // Helper: dense 4" sweep along a named wall (plus flush-to-sibling priority spots!)
+  // Helper: dense 4" sweep along a named true-compass wall (plus flush-to-sibling priority spots!)
   const sweepWall = (wName, baseBias = 0) => {
     const rot = facingRot !== null ? facingRot : wallDefaultFacingRot(wName);
     // Prioritize flush alignment right beside existing furniture on this wall!
@@ -866,24 +867,24 @@ function findBestPlacement(catalogId, opts, items, room, excludeUid = null) {
     for (const fc of flushCands) {
       pushCand(fc.x, fc.z, fc.rotDeg, true, baseBias - 6);
     }
-    if (wName === 'west') {
-      for (let z = -halfL + 8; z <= straightWestMaxZ; z += 4) {
+    if (wName === 'south') {
+      for (let z = -halfL + 8; z <= straightSouthMaxZ; z += 4) {
         pushCand(-halfW + dims.d / 2 + 1, z, rot, true, baseBias);
       }
-    } else if (wName === 'east') {
+    } else if (wName === 'north') {
       for (let z = -halfL + 8; z <= halfL - 18; z += 4) {
         pushCand(halfW - dims.d / 2 - 1, z, rot, true, baseBias);
       }
-    } else if (wName === 'north') {
+    } else if (wName === 'west') {
       for (let x = -halfW + 8; x <= halfW - 8; x += 4) {
         pushCand(x, -halfL + dims.d / 2 + 1, rot, true, baseBias);
       }
-    } else if (wName === 'south') {
+    } else if (wName === 'east') {
       for (let x = -28; x <= 14; x += 4) {
         pushCand(x, halfL - dims.d / 2 - 18, rot, false, baseBias);
       }
-    } else if (wName === 'sw') {
-      for (let z = straightWestMaxZ - 14; z <= halfL - 22; z += 4) {
+    } else if (wName === 'se') {
+      for (let z = straightSouthMaxZ - 14; z <= halfL - 22; z += 4) {
         pushCand(-halfW + dims.d / 2 + 1, z, rot, true, baseBias);
       }
     }
@@ -904,7 +905,7 @@ function findBestPlacement(catalogId, opts, items, room, excludeUid = null) {
         pushCand(cx, cz, facingRot ?? 0, false, 18);
       }
     } else {
-      const order = wall === 'east' ? ['west', 'north', 'east'] : ['west', 'east', 'north'];
+      const order = wall === 'north' ? ['south', 'west', 'north'] : ['south', 'north', 'west'];
       for (let i = 0; i < order.length; i++) {
         if (order[i] === wall) continue;
         sweepWall(order[i], 35 + i * 10);
@@ -1033,8 +1034,8 @@ function solveConstrainedLayout(spec, state) {
         nearItem = desks.find((d) => !placed.some((p) => isChairCat(ALL_CATALOG[p.catalogId]) && Math.hypot(p.x - d.x, p.z - d.z) < 40)) || desks[0] || null;
       }
 
-      // On later restarts, gently diversify zone if default wall was crowded
-      const altZone = pass > 4 && !req.zone ? (pass % 2 === 0 ? 'north' : 'south') : req.zone;
+      // On later restarts, gently diversify East/West zone if default wall was crowded
+      const altZone = pass > 4 && !req.zone ? (pass % 2 === 0 ? 'west' : 'east') : req.zone;
 
       const spot = findBestPlacement(
         req.catalogId,
@@ -1057,14 +1058,14 @@ function solveConstrainedLayout(spec, state) {
         continue;
       }
 
-      // Bonus for honoring explicit requested wall
+      // Bonus for honoring explicit requested wall (true compass!)
       if (req.wall) {
         const halfW = room.widthIn / 2;
         const halfL = room.lengthIn / 2;
         if (
-          (req.wall === 'west' && spot.x < -halfW + 32) ||
-          (req.wall === 'east' && spot.x > halfW - 32) ||
-          (req.wall === 'north' && spot.z < -halfL + 32)
+          (req.wall === 'south' && spot.x < -halfW + 32) ||
+          (req.wall === 'north' && spot.x > halfW - 32) ||
+          (req.wall === 'west' && spot.z < -halfL + 32)
         ) {
           intentBonus += 18;
         }
@@ -1162,10 +1163,10 @@ function parseClause(clause, state) {
     if (state.hotlistOnly && hasHotlist) {
       return [{ tool: 'run_optimizer', args: { goal: 'dual_office', forceHotlist: true } }];
     }
-    if (/tandem|side[\s-]by[\s-]side|both desks.*west|along.*west/.test(low)) {
+    if (/tandem|side[\s-]by[\s-]side|both desks.*(south|west)|along.*(south|west)/.test(low)) {
       return [{ tool: 'load_preset', args: { presetKey: 'dual_tandem_west' } }];
     }
-    if (/l[\s-]?corner|l[\s-]?shape|north\s*window/.test(low)) {
+    if (/l[\s-]?corner|l[\s-]?shape|(west|north)\s*window/.test(low)) {
       return [{ tool: 'load_preset', args: { presetKey: 'dual_l_corner' } }];
     }
     if (/glare|split|privacy|perpendicular/.test(low)) {
@@ -1174,7 +1175,7 @@ function parseClause(clause, state) {
     if (/baseline|minimal|move[\s-]?in\s*only|no\s*ikea|\$0/.test(low)) {
       return [{ tool: 'load_preset', args: { presetKey: 'dual_movein_baseline' } }];
     }
-    if (/face[\s-]?off|opposite|parallel|east.*west|west.*east/.test(low)) {
+    if (/face[\s-]?off|opposite|parallel|north.*south|south.*north|east.*west|west.*east/.test(low)) {
       return [{ tool: 'load_preset', args: { presetKey: 'dual_parallel' } }];
     }
     if (/shuffle|random|suggest|optimize|another|idea|scenario/.test(low)) {
@@ -1247,10 +1248,10 @@ function parseClause(clause, state) {
     else if (inM) distIn = parseFloat(inM[1]);
 
     let dxIn = 0, dzIn = 0;
-    if (/\b(north|up)\b/.test(low)) dzIn -= distIn;
-    if (/\b(south|down)\b/.test(low)) dzIn += distIn;
-    if (/\b(east|right)\b/.test(low)) dxIn += distIn;
-    if (/\b(west|left)\b/.test(low)) dxIn -= distIn;
+    if (/\b(north|up)\b/.test(low)) dxIn += distIn;
+    if (/\b(south|down)\b/.test(low)) dxIn -= distIn;
+    if (/\b(east|right)\b/.test(low)) dzIn += distIn;
+    if (/\b(west|left)\b/.test(low)) dzIn -= distIn;
     if (dxIn !== 0 || dzIn !== 0) {
       return [{ tool: 'nudge_item', args: { target, dxIn: Math.round(dxIn), dzIn: Math.round(dzIn) } }];
     }
@@ -1284,19 +1285,19 @@ function parseClause(clause, state) {
     }
   }
 
-  // 12. Parse spatial modifiers for ADD or MOVE
+  // 12. Parse spatial modifiers for ADD or MOVE (true compass: South=bent wall, East=main door, North=14'6" wall, West=wide window)
   let wall = null;
-  if (/north\s*(wall|window)|\bwindow\s*wall\b/.test(low)) wall = 'north';
-  else if (/east\s*(wall|window)/.test(low)) wall = 'east';
-  else if (/angled|sw\s*wall|southwest\s*wall/.test(low)) wall = 'sw';
-  else if (/west\s*wall/.test(low)) wall = 'west';
+  if (/west\s*(wall|window)|\bwindow\s*wall\b/.test(low)) wall = 'west';
+  else if (/north\s*(wall|window)/.test(low)) wall = 'north';
+  else if (/angled|se\s*wall|southeast\s*wall|bend\s*wall/.test(low)) wall = 'se';
   else if (/south\s*wall/.test(low)) wall = 'south';
+  else if (/east\s*wall/.test(low)) wall = 'east';
 
   let corner = null;
   if (/\b(nw|north[\s-]?west)\b/.test(low)) corner = 'nw';
   else if (/\b(ne|north[\s-]?east)\b/.test(low)) corner = 'ne';
-  else if (/\b(se|south[\s-]?east)\b/.test(low)) corner = 'se';
-  else if (/\b(sw|south[\s-]?west)\b/.test(low) && !wall) corner = 'sw';
+  else if (/\b(se|south[\s-]?east)\b/.test(low) && !wall) corner = 'se';
+  else if (/\b(sw|south[\s-]?west)\b/.test(low)) corner = 'sw';
   else if (/\bcenter\b|\bmiddle\b/.test(low)) corner = 'center';
 
   let facing = null;
@@ -1320,6 +1321,8 @@ function parseClause(clause, state) {
     else relation = 'beside';
     if (!/wall|corner|window|door|closet/.test(rhs)) {
       nearTarget = detectCatalogId(rhs, state.items) || (/\bit\b|\bthat\b/.test(rhs) ? 'selected' : null);
+    } else if (/west\s*window/.test(rhs) && !wall) {
+      wall = 'west';
     } else if (/north\s*window/.test(rhs) && !wall) {
       wall = 'north';
     }
@@ -1361,6 +1364,8 @@ function planActionsLocally(userText, state) {
   const protectedText = userText
     .replace(/chair\s+and\s+a\s+half/gi, 'chair-and-a-half')
     .replace(/black[\s-]and[\s-]brown/gi, 'black-brown')
+    .replace(/north\s*(?:and|&|\+)\s*south/gi, 'north-south')
+    .replace(/south\s*(?:and|&|\+)\s*north/gi, 'south-north')
     .replace(/east\s*(?:and|&|\+)\s*west/gi, 'east-west')
     .replace(/west\s*(?:and|&|\+)\s*east/gi, 'west-east')
     .replace(/walnut\s*(?:and|&)\s*dark\s*gr[ae]y/gi, 'walnut');
@@ -1370,15 +1375,15 @@ function planActionsLocally(userText, state) {
     const deskId = state.retainedDeskId === 'retained_white_desk' ? 'retained_white_desk' : 'retained_wood_desk';
     const wantDual = /dual|two|2\s*desk|both\s*desk/.test(fullLow);
     const items = [
-      { catalogId: 'tonstad_storage_glass_oak', wall: 'west', zone: 'north' },
-      { catalogId: 'tonstad_storage_solid_oak', wall: 'west', near: 'tonstad_storage_glass_oak', relation: 'beside' },
-      { catalogId: 'billy_narrow_oak', wall: 'west', near: 'tonstad_storage_solid_oak', relation: 'beside' },
-      { catalogId: 'tonstad_tv_unit', wall: 'north', zone: 'center' },
-      { catalogId: deskId, wall: 'east', zone: 'north' },
+      { catalogId: 'tonstad_storage_glass_oak', wall: 'south', zone: 'west' },
+      { catalogId: 'tonstad_storage_solid_oak', wall: 'south', near: 'tonstad_storage_glass_oak', relation: 'beside' },
+      { catalogId: 'billy_narrow_oak', wall: 'south', near: 'tonstad_storage_solid_oak', relation: 'beside' },
+      { catalogId: 'tonstad_tv_unit', wall: 'west', zone: 'center' },
+      { catalogId: deskId, wall: 'north', zone: 'west' },
       { catalogId: 'markus_chair', near: deskId, relation: 'in_front' },
     ];
     if (wantDual) {
-      items.push({ catalogId: 'desk_42_monitor', wall: 'east', zone: 'south' });
+      items.push({ catalogId: 'desk_42_monitor', wall: 'north', zone: 'east' });
       items.push({ catalogId: 'jarvfjallet_chair', near: 'desk_42_monitor', relation: 'in_front' });
     }
     items.push({ catalogId: 'stoense_rug', zone: 'center' });
@@ -1877,11 +1882,11 @@ export function executeToolCalls(toolCalls, ctx) {
       const sqFt = (getRoomFloorAreaSqIn(state.room) / 144).toFixed(1);
       const notes = [
         `Triad Score: ${t.overall}/100 · Storage ${t.storage} (${t.storageCuFt} cu ft) · Aesthetics ${t.aesthetics} · Traffic ${t.traffic} (${t.minCorridorIn}" aisle, ${t.reachRatio}% reachable).`,
-        `Room: 5-sided (${sqFt} sq ft) · Free wall runs: West ${audit.freeWalls.westStraight.maxRunIn}", East ${audit.freeWalls.east.maxRunIn}", North ${audit.freeWalls.north.maxRunIn}".`,
+        `Room: 5-sided (${sqFt} sq ft) · Free wall runs: South ${audit.freeWalls.southStraight.maxRunIn}", North ${audit.freeWalls.north.maxRunIn}", West ${audit.freeWalls.west.maxRunIn}".`,
         `IKEA Cart: ${audit.ikeaCount} items ($${audit.ikeaCost.toLocaleString()}).`,
       ];
       if (audit.collisionDetails.length === 0 && audit.warningDetails.length === 0) {
-        notes.push('All 5 walls, both windows, entry door swing & SE closet bi-folds are 100% clear ✓');
+        notes.push('All 5 walls, both windows, East entry door swing & NE closet bi-folds are 100% clear ✓');
       } else {
         if (audit.collisionDetails.length) notes.push(`Collisions: ${audit.collisionDetails.join(' | ')}`);
         if (audit.warningDetails.length) notes.push(`Clearance alerts: ${audit.warningDetails.join(' | ')}`);
@@ -1975,43 +1980,43 @@ function buildLLMSystemPrompt(state) {
   const halfL = state.room.lengthIn / 2;
   const flareW = state.room.swFlareWidthIn || 0;
   const flareL = state.room.swFlareLengthIn || 44;
-  const swX = -(halfW + flareW);
+  const seX = -(halfW + flareW);
   const kinkZ = halfL - flareL;
-  const doorEndX = swX + state.room.entryDoorOffsetFromWestIn + state.room.entryDoorWidthIn;
+  const doorEndX = seX + state.room.entryDoorOffsetFromWestIn + state.room.entryDoorWidthIn;
   const closetRightX = halfW - state.room.closetOffsetFromEastIn;
   const closetLeftX = closetRightX - state.room.closetWidthIn;
-  const nw = state.room.northWindow || { widthIn: 59, heightIn: 48, sillIn: 30, offsetFromWestIn: 26 };
-  const ew = state.room.eastWindow || { widthIn: 24, heightIn: 44, sillIn: 34, offsetFromSouthIn: 17 };
-  const nwX0 = Math.round(-halfW + nw.offsetFromWestIn);
-  const nwX1 = Math.round(nwX0 + nw.widthIn);
-  const ewZ1 = Math.round(halfL - ew.offsetFromSouthIn);
-  const ewZ0 = Math.round(ewZ1 - ew.widthIn);
-  const straightWestLen = Math.round(kinkZ - -halfL);
+  const ww = state.room.northWindow || { widthIn: 59, heightIn: 48, sillIn: 30, offsetFromWestIn: 26 };
+  const nw = state.room.eastWindow || { widthIn: 24, heightIn: 44, sillIn: 34, offsetFromSouthIn: 17 };
+  const wwX0 = Math.round(-halfW + ww.offsetFromWestIn);
+  const wwX1 = Math.round(wwX0 + ww.widthIn);
+  const nwZ1 = Math.round(halfL - nw.offsetFromSouthIn);
+  const nwZ0 = Math.round(nwZ1 - nw.widthIn);
+  const straightSouthLen = Math.round(kinkZ - -halfL);
 
-  return `You are an expert 3D Interior Architect Agent for a calibrated 5-sided room (${state.room.widthIn}" W × ${state.room.lengthIn}" L × ${state.room.heightIn}" H, origin at center).
+  return `You are an expert 3D Interior Architect Agent for a calibrated 5-sided room (${state.room.widthIn}" N-S × ${state.room.lengthIn}" E-W × ${state.room.heightIn}" H, origin at center; +X=North, -X=South, +Z=East main door, -Z=West window).
 
 CORE DESIGN GOAL — BALANCE ALL THREE PILLARS EQUALLY:
 1. STORAGE CAPACITY: Maximize practical vertical & closed/display storage (target 35–60 cu ft using tall cabinets, credenzas, drawers, or wall shelves) without crowding the floor.
-2. AESTHETICS & DAYLIGHT: Keep TALL items (>36") clear of BOTH windows (place LOW<=34" desks, TV units, or loveseats under windows!), cluster sibling cabinets flush along walls, balance West vs East mass, ground seating with a rug, and use a cohesive 1–2 finish palette.
-3. HUMAN MOVEMENT TRAFFIC EFFICIENCY: Preserve a wide (>=30") walkable central corridor from the SW entry door to every desk, loveseat, cabinet, and SE closet. Never block door swing or closet bi-folds. Note: office chairs CAN tuck cleanly under desks!
+2. AESTHETICS & DAYLIGHT: Keep TALL items (>36") clear of BOTH windows (place LOW<=34" desks, TV units, or loveseats under windows!), cluster sibling cabinets flush along walls, balance South vs North mass, ground seating with a rug, and use a cohesive 1–2 finish palette.
+3. HUMAN MOVEMENT TRAFFIC EFFICIENCY: Preserve a wide (>=30") walkable central corridor from the East main entry door (SE corner) to every desk, loveseat, cabinet, and NE closet. Never block door swing or closet bi-folds. Note: office chairs CAN tuck cleanly under desks!
 
-EXACT 5-WALL & WINDOW GEOMETRY (inches):
-- Straight West wall (x=${-halfW}, z in [${-halfL},+${kinkZ}]): ${straightWestLen}" uninterrupted run — best for tandem dual desks OR a flush TONSTAD/BILLY gallery!
-- North window wall (z=${-halfL}, x in [${-halfW},+${halfW}]): North window spans x in [${nwX0},+${nwX1}] (${nw.widthIn}"W, sill ${nw.sillIn}"H — keep TALL items off this span!).
-- East window wall (x=+${halfW}, z in [${-halfL},+${halfL}]): East window spans z in [+${ewZ0},+${ewZ1}] (${ew.widthIn}"W, sill ${ew.sillIn}"H — keep TALL items off this span!).
-- Angled SW wall (${-halfW},+${kinkZ})->(${swX},+${halfL}) + Entry door swing zone: x in [${swX},${doorEndX}], z in [+${halfL - state.room.entryDoorWidthIn - 2},+${halfL}] (MUST STAY CLEAR).
-- South SE Closet bi-fold clearance: x in [${closetLeftX},+${closetRightX}], z in [+${halfL - 15},+${halfL}] (MUST STAY CLEAR).
+EXACT 5-WALL & WINDOW GEOMETRY (TRUE COMPASS, inches):
+- Straight South wall (wall="south", x=${-halfW}, z in [${-halfL},+${kinkZ}]): ${straightSouthLen}" uninterrupted run before the 15° SE bend — best for tandem dual desks OR a flush TONSTAD/BILLY gallery!
+- West window wall (wall="west", z=${-halfL}, x in [${-halfW},+${halfW}]): West window spans x in [${wwX0},+${wwX1}] (${ww.widthIn}"W, sill ${ww.sillIn}"H — keep TALL items off this span!).
+- North window wall (wall="north", x=+${halfW}, z in [${-halfL},+${halfL}]): North window spans z in [+${nwZ0},+${nwZ1}] (${nw.widthIn}"W, sill ${nw.sillIn}"H — keep TALL items off this span!).
+- Angled SE bend wall (wall="se", (${-halfW},+${kinkZ})->(${seX},+${halfL})) + East Main Entry door swing zone: x in [${seX},${doorEndX}], z in [+${halfL - state.room.entryDoorWidthIn - 2},+${halfL}] (MUST STAY CLEAR).
+- East wall NE Closet bi-fold clearance (wall="east"): x in [${closetLeftX},+${closetRightX}], z in [+${halfL - 15},+${halfL}] (MUST STAY CLEAR).
 
 CURRENT ROOM STATE & TRIAD AUDIT:
 - Live Scores: Overall ${t.overall}/100 (Storage ${t.storage} [${t.storageCuFt} cu ft], Aesthetics ${t.aesthetics}, Traffic ${t.traffic} [${t.minCorridorIn}" min aisle, ${t.reachRatio}% reachable])
-- Remaining Free Wall Runs: West straight=${audit.freeWalls.westStraight.maxRunIn}", East=${audit.freeWalls.east.maxRunIn}", North=${audit.freeWalls.north.maxRunIn}"
+- Remaining Free Wall Runs: South straight=${audit.freeWalls.southStraight.maxRunIn}", North=${audit.freeWalls.north.maxRunIn}", West=${audit.freeWalls.west.maxRunIn}"
 - Active Issues: ${audit.collisionDetails.length ? `COLLISIONS: ${audit.collisionDetails.join('; ')}` : '0 collisions'} | ${audit.warningDetails.length ? `WARNINGS: ${audit.warningDetails.join('; ')}` : '0 warnings'}
 - Current Items: ${JSON.stringify(placed)}
 - Catalog: ${catalogLines.join('; ')}${hotlistClause}
 - Presets: ${Object.keys(LAYOUT_PRESETS).join(', ')}
 
 HOW TO USE TOOLS EFFECTIVELY (CRITICAL):
-- For ANY whole-room design, rearrangement, multi-item layout, swap, or optimization request: ALWAYS call "plan_layout" with declarative walls & zones! NEVER manually guess raw (x, z, rotDeg) coordinates or emit chains of move_item calls that deadlock against old furniture. The built-in 20-restart spatial constraint solver computes exact zero-collision flush geometry optimizing Storage + Aesthetics + Traffic automatically!
+- For ANY whole-room design, rearrangement, multi-item layout, swap, or optimization request: ALWAYS call "plan_layout" with declarative walls ("south","north","west","east","se") & zones ("north","south","east","west","center")! NEVER manually guess raw (x, z, rotDeg) coordinates or emit chains of move_item calls that deadlock against old furniture. The built-in 20-restart spatial constraint solver computes exact zero-collision flush geometry optimizing Storage + Aesthetics + Traffic automatically!
 - Only use add_item / move_item / remove_item / rotate_item / set_finish for small single-item tweaks to the existing room.
 - Always include the user's kept pieces (retained_loveseat + ${state.retainedDeskId || 'retained_wood_desk'}) in plan_layout unless the user explicitly asks to remove them.
 
@@ -2239,7 +2244,7 @@ export async function runLayoutAgentCommand(userText, ctx, llmConfig = { mode: '
         `SPATIAL VERIFICATION AUDIT FAILED — AUTO-REPAIR REQUIRED.\n` +
         `Issues found:\n- ${issues.join('\n- ')}\n` +
         `Current Scores: Overall ${t1.overall}/100 (Storage ${t1.storage}, Aesthetics ${t1.aesthetics}, Traffic ${t1.traffic}).\n` +
-        `Remaining Free Wall Runs: West=${auditAfter1.freeWalls.westStraight.maxRunIn}", East=${auditAfter1.freeWalls.east.maxRunIn}", North=${auditAfter1.freeWalls.north.maxRunIn}".\n` +
+        `Remaining Free Wall Runs: South=${auditAfter1.freeWalls.southStraight.maxRunIn}", North=${auditAfter1.freeWalls.north.maxRunIn}", West=${auditAfter1.freeWalls.west.maxRunIn}".\n` +
         `Emit a SINGLE repaired "plan_layout" call that resolves ALL issues while balancing Storage, Aesthetics, and Traffic (swap to slimmer pieces like billy_narrow_oak or relocate tall pieces off windows if needed).`;
 
       try {

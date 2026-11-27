@@ -1828,8 +1828,8 @@ export function createFurnitureMesh(catalogEntry, finishKey, options = {}) {
     }
   } else if (type === 'kallax') {
     // Detailed KALLAX Modular Cube Grid with Renton-accurate Door, 2-Drawer, Divider Shelf, Glass & KUGGIS Inserts!
-    const cols = catalogEntry.cols || 4;
-    const rows = catalogEntry.rows || 2;
+    const cols = catalogEntry.cols || Math.max(1, Math.min(5, Math.round(((catalogEntry.w || 30) - 2.6) / 13.8)));
+    const rows = catalogEntry.rows || Math.max(1, Math.min(5, Math.round(((catalogEntry.h || 30) - 2.6) / 13.8)));
     const style = frontStyle || catalogEntry.defaultFrontStyle || 'lower_drawers_doors';
     const outerT = 0.038;
     const innerT = 0.016;

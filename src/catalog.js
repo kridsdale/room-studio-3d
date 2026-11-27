@@ -128,7 +128,7 @@ export const RETAINED_CATALOG = {
   retained_wood_desk: {
     id: 'retained_wood_desk',
     name: 'Wood Standing Desk',
-    subtitle: 'Existing · Retained (East Wall)',
+    subtitle: 'Existing · Retained (North Wall)',
     category: 'tables',
     brand: 'Retained',
     retained: true,
@@ -1127,8 +1127,8 @@ export const LAYOUT_PRESETS = {
     ],
   },
   dual_parallel: {
-    label: 'Dual Office: Face-Off (E + W)',
-    description: '2nd Desk w/ 42" Monitor on straight West wall + Retained Desk on East wall, staggered back-to-back chairs, North Loveseat & BILLY storage.',
+    label: 'Dual Office: Face-Off (N + S)',
+    description: '2nd Desk w/ 42" Monitor on straight South wall + Retained Desk on North wall, staggered back-to-back chairs, West Loveseat & BILLY storage.',
     items: [
       { catalogId: 'stoense_rug', x: 0, z: -10, rotDeg: 0, finish: 'beige' },
       { catalogId: 'retained_loveseat', x: 15, z: -67.5, rotDeg: 0, finish: 'slateBlue' },
@@ -1143,8 +1143,8 @@ export const LAYOUT_PRESETS = {
     ],
   },
   dual_tandem_west: {
-    label: 'Dual Office: Tandem West Wall',
-    description: 'Both desks side-by-side along the 10\'10" straight West wall (ALEX pedestal between them), leaving the entire East side open for the Loveseat lounge.',
+    label: 'Dual Office: Tandem South Wall',
+    description: 'Both desks side-by-side along the 10\'10" straight South wall (ALEX pedestal between them), leaving the entire North side open for the Loveseat lounge.',
     items: [
       { catalogId: 'stoense_rug', x: 9, z: -18, rotDeg: 0, finish: 'lightGrey' },
       { catalogId: 'desk_42_monitor', x: -40.5, z: -54, rotDeg: 90, finish: 'walnut' },
@@ -1160,7 +1160,7 @@ export const LAYOUT_PRESETS = {
   },
   dual_l_corner: {
     label: 'Dual Office: L-Corner Studio',
-    description: '42" Monitor desk near the North window + Retained Desk on the East wall forming a studio corner, with Big Loveseat & lounge below.',
+    description: '42" Monitor desk near the West window + Retained Desk on the North wall forming a studio corner, with Big Loveseat & lounge along South.',
     items: [
       { catalogId: 'lohals_rug', x: 4, z: 12, rotDeg: 0, finish: 'jute' },
       { catalogId: 'desk_42_monitor', x: -24, z: -72, rotDeg: 0, finish: 'walnut' },
@@ -1175,7 +1175,7 @@ export const LAYOUT_PRESETS = {
   },
   dual_glare_free: {
     label: 'Dual Office: Glare-Free Split',
-    description: 'Both screens perpendicular to the North window to cut glare, with BILLY library wall, North Loveseat & STORKLINTA storage.',
+    description: 'Both screens perpendicular to the West window to cut glare, with BILLY library wall, West Loveseat & STORKLINTA storage.',
     items: [
       { catalogId: 'stoense_rug', x: 0, z: -12, rotDeg: 0, finish: 'sage' },
       { catalogId: 'retained_loveseat', x: -19, z: -67.5, rotDeg: 0, finish: 'slateBlue' },
@@ -1232,7 +1232,7 @@ export const LAYOUT_PRESETS = {
   },
   kids_study: {
     label: 'Kids + Parent Study',
-    description: 'KURA bed & TROFAST toy bins along West wall + retained loveseat reading corner & desk.',
+    description: 'KURA bed & TROFAST toy bins along South wall + retained loveseat reading corner & desk.',
     items: [
       { catalogId: 'stoense_rug', x: -2, z: -4, rotDeg: 0, finish: 'lightGrey' },
       { catalogId: 'kura_bed', x: -35, z: -34, rotDeg: 0, finish: 'pine' },

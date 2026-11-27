@@ -81,8 +81,8 @@ function generateHotlistOptimizedLayout(room, retainedDeskId, goal, lastArchetyp
 
   const validHotlist = Array.from(new Set(hotlistIds)).filter((id) => ALL_CATALOG[id]);
   const archetypes = [
-    { id: 'hotlist_west_gallery', title: 'Considering Hotlist · West Storage Wall' },
-    { id: 'hotlist_east_gallery', title: 'Considering Hotlist · East Storage Wall' },
+    { id: 'hotlist_west_gallery', title: 'Considering Hotlist · South Storage Wall' },
+    { id: 'hotlist_east_gallery', title: 'Considering Hotlist · North Storage Wall' },
     { id: 'hotlist_dual_studio',  title: 'Considering Hotlist · Studio Split' },
     { id: 'hotlist_lounge_focus', title: 'Considering Hotlist · Lounge & Display' },
   ];
@@ -314,14 +314,14 @@ export function generateOptimizedLayout(room, retainedDeskId, goal = 'any', last
 
   // Define distinct architectural archetypes with varied zones
   const allArchetypes = [
-    { id: 'dual_face_off',          goal: 'dual_office', title: 'Dual Office · Face-Off (East + West)' },
-    { id: 'dual_tandem_west',       goal: 'dual_office', title: 'Dual Office · Tandem West Wall Run' },
+    { id: 'dual_face_off',          goal: 'dual_office', title: 'Dual Office · Face-Off (North + South)' },
+    { id: 'dual_tandem_west',       goal: 'dual_office', title: 'Dual Office · Tandem South Wall Run' },
     { id: 'dual_l_corner_studio',   goal: 'dual_office', title: 'Dual Office · L-Corner Command Studio' },
     { id: 'dual_glare_free_split',  goal: 'dual_office', title: 'Dual Office · Glare-Free Split Zone' },
     { id: 'dual_peninsula_collab',  goal: 'dual_office', title: 'Dual Office · Executive Studio + Lounge' },
-    { id: 'east_desk_north_lounge', goal: 'office',      title: 'Executive East Desk + North Lounge' },
+    { id: 'east_desk_north_lounge', goal: 'office',      title: 'Executive North Desk + West Lounge' },
     { id: 'window_desk_east_lounge',goal: 'office',      title: 'Window-View Desk + Media Wall' },
-    { id: 'west_desk_corner_lounge',goal: 'office',      title: 'West Studio Desk + Reading Corner' },
+    { id: 'west_desk_corner_lounge',goal: 'office',      title: 'South Studio Desk + Reading Corner' },
     { id: 'guest_daybed_suite',     goal: 'guest',       title: 'HEMNES Daybed Guest Suite + Study' },
     { id: 'guest_full_bed_office',  goal: 'guest',       title: 'Compact Guest Bedroom + Workspace' },
     { id: 'library_sanctuary',      goal: 'library',     title: 'BILLY Library Wall + Cozy Reading Nook' },
